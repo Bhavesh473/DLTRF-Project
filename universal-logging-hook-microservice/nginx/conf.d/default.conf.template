@@ -1,0 +1,103 @@
+server {
+    listen 80;
+    server_name localhost;
+
+    set $b64_body "";
+
+    client_max_body_size    50M;
+    client_body_buffer_size 50M;
+    large_client_header_buffers 4 256k;
+
+    # Ensure the payloads spool directory exists at startup
+    # (Docker volume mount creates the dir, but set permissions explicitly)
+
+    location / {
+        lua_need_request_body on;
+
+        access_by_lua_block {
+            local body = ngx.req.get_body_data()
+
+            -- Fallback: body was spooled to a temp file by Nginx (shouldn't happen
+            -- with client_body_buffer_size 50M, but defend against it anyway)
+            if not body then
+                local tmp = ngx.req.get_body_file()
+                if tmp then
+                    local f = io.open(tmp, "rb")
+                    if f then
+                        body = f:read("*all")
+                        f:close()
+                    end
+                end
+            end
+
+            if not body or #body == 0 then
+                ngx.var.b64_body = ""
+                return
+            end
+
+            -- Anything over 4KB is a candidate for binary spooling.
+            -- This threshold catches all multipart/form-data uploads while
+            -- keeping small form POSTs (login, _token, toggle) inline as b64.
+            local SPOOL_THRESHOLD_BYTES = 4096
+
+            if #body > SPOOL_THRESHOLD_BYTES then
+                -- $request_id is a 32-char hex string, unique per request.
+                -- Available in OpenResty / Nginx >= 1.11.0.
+                local req_id   = ngx.var.request_id
+                local spool_path = "/var/log/nginx/payloads/req_" .. req_id .. ".bin"
+
+                local f, err = io.open(spool_path, "wb")
+                if f then
+                    f:write(body)
+                    f:close()
+                    -- The log entry carries only a lightweight pointer.
+                    -- Fluentd/FastAPI/Redis never see the binary payload at all.
+                    ngx.var.b64_body = "__FILE__:" .. spool_path
+                    ngx.log(ngx.INFO, "DLTRF: spooled ", #body,
+                            " bytes → ", spool_path)
+                else
+                    -- Disk write failed (permissions, disk full).
+                    -- Fall back to truncated b64 so at least routing info is preserved.
+                    -- 499996 = 124999 * 4 — valid Base64 boundary.
+                    ngx.log(ngx.ERR, "DLTRF: spool write failed: ", err,
+                            " → falling back to truncated b64")
+                    ngx.var.b64_body = ngx.encode_base64(
+                        string.sub(body, 1, 499996)
+                    )
+                end
+            else
+                -- Small body: inline Base64 is fine.
+                -- 499996 cap is a safety net only; small bodies never hit it.
+                local b64 = ngx.encode_base64(body)
+                if #b64 > 499996 then
+                    b64 = string.sub(b64, 1, 499996)
+                end
+                ngx.var.b64_body = b64
+            end
+        }
+
+        set $dltrf_upstream "http://${TARGET_APP_HOST}:${TARGET_APP_PORT}";
+        proxy_pass $dltrf_upstream;
+        proxy_set_header Host              $host;
+
+        set $real_ip $http_x_real_ip;
+        if ($real_ip = "") {
+            set $real_ip $remote_addr;
+        }
+        proxy_set_header X-Real-IP         $real_ip;
+        proxy_set_header X-Forwarded-For   $real_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_buffer_size        128k;
+        proxy_buffers            4 256k;
+        proxy_busy_buffers_size  256k;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout    60s;
+        proxy_read_timeout    60s;
+    }
+}

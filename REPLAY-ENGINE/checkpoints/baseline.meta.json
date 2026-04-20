@@ -1,0 +1,8 @@
+{
+  "checkpoint_name": "baseline",
+  "db_type": "sqlite",
+  "app_container": "juice-shop",
+  "saved_at": "2026-04-19T17:51:46Z",
+  "file": "/mnt/c/Users/BHAVESH/OneDrive/Desktop/DLTRF-Project/replay-engine/checkpoints/baseline.checkpoint",
+  "config": "/mnt/c/Users/BHAVESH/OneDrive/Desktop/DLTRF-Project/replay-engine/dltrf.yaml"
+}

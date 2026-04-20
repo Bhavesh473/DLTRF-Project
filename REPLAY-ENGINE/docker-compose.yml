@@ -1,0 +1,75 @@
+# replay-engine/docker-compose.yml
+#
+# HOW TO USE:
+#   1. Edit ../dltrf.config.yaml
+#   2. Run .\dltrf.ps1 up  (generates .env + divergence_config.yaml automatically)
+#
+# TARGET_HOST and TARGET_PORT are injected by GenerateDltrfYaml in dltrf.ps1.
+# Changes to dltrf.config.yaml take effect after: .\dltrf.ps1 up
+
+services:
+
+  # ── DLTRF Replay Engine ────────────────────────────────────────────────────
+  replay-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: replay-engine
+    ports:
+      - "8000:8000"     # FastAPI control API
+      - "8050:8050"     # Flask dashboard (if present)
+    environment:
+      # Redis — shared with logging hook stack
+      - REDIS_URL=redis://universal-logging-redis:6379
+      - STREAM_KEY=${STREAM_KEY:-nginx-log-stream}
+      - REPLAY_SHARED_TOKEN=${REPLAY_SHARED_TOKEN:-mysecret}
+
+      # Target URL — injected automatically by .\dltrf.ps1 via .env
+      # Never edit this line; edit dltrf.config.yaml instead.
+      - TARGET_APP_URL=http://${TARGET_HOST}:${TARGET_PORT}
+
+      # dltrf.yaml location inside the container
+      - DLTRF_CONFIG=/app/dltrf.yaml
+
+      # divergence_config.yaml location
+      - DIVERGENCE_CONFIG=/app/divergence_config.yaml
+
+    networks:
+      - replay-network
+      # Shared network with logging hook — must match the explicit name
+      # set in universal-logging-hook-microservice/docker-compose.yml
+      - dltrf-logging-network
+
+    restart: unless-stopped
+
+    volumes:
+      # Reports output — accessible on host for download
+      - ./reports:/app/reports
+
+      # Checkpoints — shared with checkpoint.sh on host
+      - ./checkpoints:/app/checkpoints
+
+      # Framework contract — single source of truth
+      - ${DLTRF_YAML_PATH:-./dltrf.yaml}:/app/dltrf.yaml:ro
+
+      # Divergence classifier config — written by .\dltrf.ps1 from profiles/
+      - ./divergence_config.yaml:/app/divergence_config.yaml:ro
+
+      # Docker socket — required for Python state adapters to run docker commands.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  replay-network:
+    driver: bridge
+
+  dltrf-logging-network:
+    external: true
+    name: dltrf-logging-network

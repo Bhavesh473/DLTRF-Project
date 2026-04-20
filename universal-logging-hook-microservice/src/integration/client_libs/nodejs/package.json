@@ -1,0 +1,23 @@
+// src/integration/client_libs/nodejs/package.json
+
+{
+  "name": "universal-logger-nodejs",
+  "version": "0.1.0",
+  "description": "Node.js client library for the Universal Logging Microservice",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "author": "Bhavesh",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/universal-logging-microservice.git"  // Replace with actual URL
+  }
+} 

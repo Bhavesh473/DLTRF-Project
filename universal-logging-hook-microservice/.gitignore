@@ -1,0 +1,71 @@
+# Byte-compiled / optimized / DLL files
+_pycache_/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+
+# Environment files
+.env
+*.env
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Python test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# Flask/FastAPI temp files
+instance/
+*.db  # SQLite files (if used)
+flask_session/
+
+# Docker-related
+Dockerfile.*
+docker-compose.override.yml
+docker-compose.yml.bak
+*.dockerignore
+docker/
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+*.db
+data/
+backups/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Misc temporary files
+tmp/
+temp/
+cache/
+*.swp
+*.bak
+*.tmp

@@ -1,0 +1,40 @@
+{
+  "replay_id": "r-29f5a6ab",
+  "timestamp": "2026-04-18T08:02:57.645726+00:00",
+  "summary": {
+    "total_events": 0,
+    "divergences_found": 0,
+    "reproduced_exactly": 0,
+    "expected_differences": 0,
+    "needs_investigation": 0,
+    "genuine_bugs": 0,
+    "reproducibility_rate": 100.0,
+    "true_reproducibility": 100.0,
+    "duration_seconds": 0.01,
+    "auth_mode": "cookie",
+    "auth_was_active": true,
+    "target_url": "http://bookstack:80",
+    "recorded_host": ""
+  },
+  "divergences": {
+    "expected": [],
+    "investigate": [],
+    "critical": []
+  },
+  "divergence_analysis": {
+    "total": 0,
+    "by_tier": {
+      "EXPECTED": 0,
+      "INVESTIGATE": 0,
+      "CRITICAL": 0
+    },
+    "details": []
+  },
+  "all_events": [],
+  "performance": {
+    "avg_response_time_ms": 0,
+    "min_response_time_ms": 0,
+    "max_response_time_ms": 0
+  },
+  "errors": []
+}

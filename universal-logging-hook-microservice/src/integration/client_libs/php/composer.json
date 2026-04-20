@@ -1,0 +1,22 @@
+{
+  "name": "universal/logger-php",
+  "description": "PHP client library for the Universal Logging Microservice",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Bhavesh",
+      "email": "bhavesh@example.com"
+    }
+  ],
+  "require": {
+    "php": ">=7.4",
+    "guzzlehttp/guzzle": "^7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Universal\\Logger\\": "src/"
+    }
+  },
+  "minimum-stability": "stable"
+} 

@@ -1,0 +1,17 @@
+# configs/app_config.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPRECATED — this file is kept for backward compatibility only.
+# New configuration lives in dltrf.yaml at the project root.
+#
+# checkpoint.sh and adapter_factory.py will prefer dltrf.yaml over this file
+# when both exist. Migrate your settings to dltrf.yaml and delete this file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+app:
+  name: "Juice Shop"
+  container_name: "juice-shop"
+  db_type: "sqlite"
+  sqlite_path: "/juice-shop/data/juiceshop.sqlite"
+
+checkpoint:
+  name: "baseline"

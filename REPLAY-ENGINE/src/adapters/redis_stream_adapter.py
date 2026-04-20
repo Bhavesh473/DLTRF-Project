@@ -1,0 +1,432 @@
+"""
+Redis Streams Adapter for consuming events with consumer group support
+"""
+
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone
+from typing import AsyncGenerator, Dict, List, Optional, Tuple, Any
+import redis.asyncio as redis  # pyright: ignore[reportMissingImports]
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class StreamMessage:
+    """Represents a message from Redis Streams"""
+    stream_id: str
+    fields: Dict[str, Any]
+    timestamp: datetime
+    
+    @property
+    def event_id(self) -> str:
+        """Get event ID from message fields"""
+        return self.fields.get("event_id", "")
+    
+    @property
+    def session_id(self) -> Optional[str]:
+        """Get session ID from message fields"""
+        return self.fields.get("session_id")
+    
+    @property
+    def request_id(self) -> Optional[str]:
+        """Get request ID from message fields"""
+        return self.fields.get("request_id")
+
+
+class RedisStreamAdapter:
+    """Redis Streams adapter with consumer group support"""
+    
+    def __init__(
+        self,
+        redis_url: str,
+        stream_key: str,
+        consumer_group: str,
+        consumer_name: str,
+        batch_size: int = 100
+    ):
+        self.redis_url = redis_url
+        self.stream_key = stream_key
+        self.consumer_group = consumer_group
+        self.consumer_name = consumer_name
+        self.batch_size = batch_size
+        
+        self.redis_client: Optional[redis.Redis] = None
+        self.connection_pool: Optional[redis.ConnectionPool] = None
+        
+    async def connect(self) -> None:
+        """Establish Redis connection and create consumer group"""
+        try:
+            self.connection_pool = redis.ConnectionPool.from_url(self.redis_url)
+            self.redis_client = redis.Redis(connection_pool=self.connection_pool)
+            
+            # Test connection
+            await self.redis_client.ping()
+            logger.info(f"Connected to Redis at {self.redis_url}")
+            
+            # Create consumer group if it doesn't exist
+            try:
+                await self.redis_client.xgroup_create(
+                    self.stream_key,
+                    self.consumer_group,
+                    id="0",
+                    mkstream=True
+                )
+                logger.info(f"Created consumer group '{self.consumer_group}' for stream '{self.stream_key}'")
+            except redis.ResponseError as e:
+                if "BUSYGROUP" in str(e):
+                    logger.info(f"Consumer group '{self.consumer_group}' already exists")
+                else:
+                    raise
+            
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            raise
+    
+    async def disconnect(self) -> None:
+        """Close Redis connection"""
+        if self.redis_client:
+            await self.redis_client.close()
+        if self.connection_pool:
+            await self.connection_pool.disconnect()
+        logger.info("Redis connection closed")
+    
+    async def get_stream_info(self) -> Dict[str, Any]:
+        """Get information about the Redis stream"""
+        try:
+            info = await self.redis_client.xinfo_stream(self.stream_key)
+            return {
+                "length": info.get("length", 0),
+                "first_entry": info.get("first-entry"),
+                "last_entry": info.get("last-entry"),
+                "groups": info.get("groups", 0)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get stream info: {e}")
+            return {"length": 0, "error": str(e)}
+    
+    async def read_events(self, start_ts=None, end_ts=None, count=100):
+        """
+        Read events from Redis stream for replay (FIXED - Ensure connection + Parse payload).
+        
+        Args:
+            start_ts: Start timestamp (optional, for filtering)
+            end_ts: End timestamp (optional, for filtering)
+            count: Number of events to read (default 100)
+        
+        Returns:
+            List of event dictionaries
+        """
+        try:
+            # CRITICAL FIX: Ensure Redis client is connected
+            if self.redis_client is None:
+                logger.warning("Redis client not connected, connecting now...")
+                await self.connect()
+            
+            # Use read_messages_by_range to get events in deterministic order
+            messages = await self.read_messages_by_range(
+                start_id="0",
+                end_id="+",
+                count=count
+            )
+            
+            events = []
+            for msg in messages:
+                # Parse the 'payload' field which contains nested JSON
+                payload_str = msg.fields.get('payload', '{}')
+                try:
+                    payload = json.loads(payload_str) if isinstance(payload_str, str) else payload_str
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse payload JSON for event {msg.stream_id}")
+                    continue
+                
+                # Extract fields from parsed payload
+                event = {
+                    'event_id': msg.fields.get('event_id', msg.stream_id),
+                    'timestamp': payload.get('timestamp', msg.timestamp.isoformat()),
+                    'method': payload.get('method', 'GET'),
+                    'path': payload.get('path', '/'),
+                    'status': int(payload.get('status', 200)) if payload.get('status') else 200,
+                    'message': payload.get('message', ''),
+                    'level': payload.get('level', 'INFO'),
+                    'source': payload.get('source', 'unknown'),
+                    'ip': payload.get('ip', ''),
+                    'user_agent': payload.get('user_agent', ''),
+                    'request_body': payload.get('request_body', ''),
+                    'response_time': float(payload.get('response_time', 0)) if payload.get('response_time') else 0.0,
+                    'host': payload.get('host', ''),
+                    'body_bytes': int(payload.get('body_bytes', 0)) if payload.get('body_bytes') else 0,
+                }
+                
+                events.append(event)
+            
+            logger.info(f"Read {len(events)} events for replay from Redis stream")
+            return events
+            
+        except Exception as e:
+            logger.error(f"Failed to read events from stream: {e}", exc_info=True)
+            return []
+    
+    async def read_new_messages(self) -> List[StreamMessage]:
+        """
+        Read new messages from the stream using consumer group
+        
+        Returns:
+            List of StreamMessage objects
+        """
+        try:
+            # Read new messages
+            messages = await self.redis_client.xreadgroup(
+                self.consumer_group,
+                self.consumer_name,
+                {self.stream_key: ">"},
+                count=self.batch_size,
+                block=1000  # Block for 1 second if no messages
+            )
+            
+            result = []
+            for stream_name, stream_messages in messages:
+                for message_id, fields in stream_messages:
+                    # Parse timestamp from message ID (Redis timestamp)
+                    timestamp_ms = int(message_id.split('-')[0])
+                    timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+                    
+                    result.append(StreamMessage(
+                        stream_id=message_id,
+                        fields=fields,
+                        timestamp=timestamp
+                    ))
+            
+            if result:
+                logger.debug(f"Read {len(result)} new messages from stream")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to read new messages: {e}")
+            return []
+    
+    async def read_pending_messages(self) -> List[StreamMessage]:
+        """
+        Read pending messages for this consumer
+        
+        Returns:
+            List of StreamMessage objects
+        """
+        try:
+            # Get pending messages for this consumer
+            pending = await self.redis_client.xpending_range(
+                self.stream_key,
+                self.consumer_group,
+                min="-",
+                max="+",
+                count=self.batch_size,
+                consumer=self.consumer_name
+            )
+            
+            if not pending:
+                return []
+            
+            # Read the pending messages
+            message_ids = [msg["message_id"] for msg in pending]
+            messages = await self.redis_client.xrange(
+                self.stream_key,
+                min=message_ids[0],
+                max=message_ids[-1]
+            )
+            
+            result = []
+            for message_id, fields in messages:
+                if message_id in message_ids:
+                    timestamp_ms = int(message_id.split('-')[0])
+                    timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+                    
+                    result.append(StreamMessage(
+                        stream_id=message_id,
+                        fields=fields,
+                        timestamp=timestamp
+                    ))
+            
+            logger.info(f"Read {len(result)} pending messages")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to read pending messages: {e}")
+            return []
+    
+    async def read_messages_by_range(
+        self,
+        start_id: str = "0",
+        end_id: str = "+",
+        count: Optional[int] = None
+    ) -> List[StreamMessage]:
+        """
+        Read messages - STRICT LIMIT ENFORCEMENT
+        """
+        try:
+            # ENFORCEMENT 1: Set default
+            if count is None or count <= 0:
+                count = 1000
+            
+            # ENFORCEMENT 2: Log the limit
+            logger.info(f"🔒 STRICT LIMIT: Reading MAX {count} messages (start={start_id}, end={end_id})")
+            
+            # ENFORCEMENT 3: Fetch from Redis
+            messages = await self.redis_client.xrange(
+                self.stream_key,
+                min=start_id,
+                max=end_id,
+                count=count
+            )
+
+            result = []
+            
+            if messages:
+                for message_id, fields in messages:
+                    # ENFORCEMENT 4: Hard stop at limit
+                    if len(result) >= count:
+                        logger.warning(f"⚠️ STOPPED at {count} messages (limit reached)")
+                        break
+                    
+                    msg_id_str = message_id.decode() if isinstance(message_id, bytes) else message_id
+                    timestamp_ms = int(msg_id_str.split('-')[0])
+                    timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+
+                    decoded_fields = {}
+                    for key, value in fields.items():
+                        k = key.decode() if isinstance(key, bytes) else key
+                        v = value.decode() if isinstance(value, bytes) else value
+                        decoded_fields[k] = v
+
+                    result.append(StreamMessage(
+                        stream_id=msg_id_str,
+                        fields=decoded_fields,
+                        timestamp=timestamp
+                    ))
+
+            # ENFORCEMENT 5: Final slice
+            result = result[:count]
+            
+            # ENFORCEMENT 6: Verify
+            actual_count = len(result)
+            logger.info(f"✅ Returned {actual_count} messages (limit was {count})")
+            
+            if actual_count != count and messages:
+                logger.warning(f"⚠️ Expected {count}, got {actual_count}")
+            
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to read messages: {e}")
+            return []
+    
+    async def acknowledge_message(self, message_id: str) -> bool:
+        """
+        Acknowledge processing of a message
+        
+        Args:
+            message_id: Message ID to acknowledge
+            
+        Returns:
+            True if acknowledged successfully
+        """
+        try:
+            result = await self.redis_client.xack(
+                self.stream_key,
+                self.consumer_group,
+                message_id
+            )
+            return result > 0
+        except Exception as e:
+            logger.error(f"Failed to acknowledge message {message_id}: {e}")
+            return False
+    
+    async def acknowledge_messages(self, message_ids: List[str]) -> int:
+        """
+        Acknowledge processing of multiple messages
+        
+        Args:
+            message_ids: List of message IDs to acknowledge
+            
+        Returns:
+            Number of messages acknowledged
+        """
+        try:
+            if not message_ids:
+                return 0
+                
+            result = await self.redis_client.xack(
+                self.stream_key,
+                self.consumer_group,
+                *message_ids
+            )
+            logger.debug(f"Acknowledged {result} messages")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to acknowledge messages: {e}")
+            return 0
+    
+    async def get_consumer_info(self) -> Dict[str, Any]:
+        """Get information about this consumer"""
+        try:
+            consumers = await self.redis_client.xinfo_consumers(
+                self.stream_key,
+                self.consumer_group
+            )
+            
+            for consumer in consumers:
+                if consumer["name"] == self.consumer_name:
+                    return {
+                        "name": consumer["name"],
+                        "pending": consumer["pending"],
+                        "idle": consumer["idle"]
+                    }
+            
+            return {"name": self.consumer_name, "pending": 0, "idle": 0}
+            
+        except Exception as e:
+            logger.error(f"Failed to get consumer info: {e}")
+            return {"name": self.consumer_name, "error": str(e)}
+    
+    async def consume_messages(
+        self,
+        timeout: Optional[int] = None
+    ) -> AsyncGenerator[StreamMessage, None]:
+        """
+        Continuously consume messages from the stream
+        
+        Args:
+            timeout: Maximum time to wait for messages (None for infinite)
+            
+        Yields:
+            StreamMessage objects
+        """
+        start_time = datetime.now()
+        
+        while True:
+            try:
+                # Check timeout
+                if timeout and (datetime.now() - start_time).total_seconds() > timeout:
+                    logger.info("Message consumption timeout reached")
+                    break
+                
+                # Read new messages first
+                messages = await self.read_new_messages()
+                
+                # If no new messages, check pending messages
+                if not messages:
+                    messages = await self.read_pending_messages()
+                
+                # Yield messages
+                for message in messages:
+                    yield message
+                
+                # If no messages, sleep briefly
+                if not messages:
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"Error in message consumption: {e}")
+                await asyncio.sleep(1)  # Wait before retrying

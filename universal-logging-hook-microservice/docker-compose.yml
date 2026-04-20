@@ -1,0 +1,108 @@
+services:
+  fluentd:
+    image: fluent/fluentd:latest
+    container_name: universal-logging-fluentd
+    ports:
+      - "9880:9880"
+      - "24224:24224"
+      - "5140:5140/udp"
+      - "5140:5140"
+    volumes:
+      - ./fluent/fluent.conf:/fluentd/etc/fluent.conf:ro
+      - ./logs:/fluentd/log
+      - nginx-shared-logs:/var/log/nginx
+    networks:
+      - logging-network
+    user: "root"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: universal-logging-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - logging-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+
+  replay-sidecar:
+    build:
+      context: ./sidecar
+      dockerfile: Dockerfile
+    container_name: replay-sidecar
+    ports:
+      - "8200:8200"
+    environment:
+      - REDIS_URL=redis://universal-logging-redis:6379
+      - STREAM_KEY=nginx-log-stream
+    networks:
+      - logging-network
+    restart: unless-stopped
+
+  # ── TARGET APP: OWASP JUICE SHOP ──
+  target-app:
+    image: bkimminich/juice-shop:latest
+    container_name: juice-shop
+    environment:
+      - NODE_ENV=production
+    networks:
+      - logging-network
+    restart: unless-stopped
+
+  app-proxy:
+    image: openresty/openresty:alpine
+    container_name: app-proxy
+    ports:
+      - "3000:80"
+      - "8080:8080"
+    volumes:
+      - ./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      - ./nginx/conf.d:/tmp/nginx_templates:ro
+      - nginx-shared-logs:/var/log/nginx
+      - nginx-payloads:/var/log/nginx/payloads
+    environment:
+      # Hardcoded directly to Juice Shop's internal port (3000)
+      - TARGET_APP_HOST=juice-shop
+      - TARGET_APP_PORT=3000
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache gettext
+        mkdir -p /var/log/nginx/payloads
+        chmod 755 /var/log/nginx/payloads
+        mkdir -p /usr/local/openresty/nginx/conf/conf.d
+        envsubst '$${TARGET_APP_HOST}$${TARGET_APP_PORT}' < /tmp/nginx_templates/default.conf.template > /usr/local/openresty/nginx/conf/conf.d/default.conf
+        exec openresty -g 'daemon off;'
+    depends_on:
+      - fluentd
+      - target-app
+    networks:
+      - logging-network
+    restart: unless-stopped
+
+  endpoint-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: endpoint-discovery-worker
+    environment:
+      - REDIS_URL=redis://universal-logging-redis:6379
+      - STREAM_KEY=nginx-log-stream
+    networks:
+      - logging-network
+    restart: unless-stopped
+
+networks:
+  logging-network:
+    driver: bridge
+    name: dltrf-logging-network
+
+volumes:
+  redis-data:
+    driver: local
+  nginx-shared-logs: {}
+  nginx-payloads: {}

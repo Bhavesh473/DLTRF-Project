@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>DLTRF — r-2565b3bd</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ----- LIGHT MODE PROFESSIONAL THEME ----- */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+        font-family: 'Bricolage Grotesque', sans-serif; 
+        background: #ffffff; /* Pure white background */
+        color: #111827; /* Dark slate text */
+        line-height: 1.5; 
+        border-top: 4px solid #2563eb; 
+    }
+    .wrap { max-width: 1060px; margin: 0 auto; padding: 0 28px; }
+    section { padding: 44px 0; }
+    section + section { border-top: 1px solid #e5e7eb; }
+    .sec-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 18px; font-weight: 600; }
+    
+    .topbar { background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 20px 0; }
+    .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+    .brand-name { font-size: 1.4rem; font-weight: 800; letter-spacing: 0.06em; color: #111827; }
+    .brand-name::before { content: '■'; color: #2563eb; margin-right: 8px; font-size: 0.55em; vertical-align: middle; }
+    .brand-sub { font-size: 0.73rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+    .meta { font-size: 0.76rem; color: #6b7280; line-height: 1.7; font-family: 'DM Mono', monospace; }
+    .meta strong { color: #374151; font-weight: 500; }
+    
+    .mbadge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-left: 6px; }
+    .mbadge.yes { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
+    .mbadge.no  { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+    
+    .dl-wrap { position: relative; flex-shrink: 0; }
+    .dl-btn { display: flex; align-items: center; gap: 7px; background: #ffffff; border: 1px solid #d1d5db; color: #4b5563; padding: 8px 14px; border-radius: 5px; cursor: pointer; font-size: 0.82rem; font-weight: 600; font-family: 'Bricolage Grotesque', sans-serif; transition: all 0.15s; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .dl-btn:hover { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+    .dl-chev { font-size: 0.55rem; margin-left: 2px; display: inline-block; transition: transform 0.15s; }
+    .dl-wrap.open .dl-chev { transform: rotate(180deg); }
+    
+    .dl-menu { display: none; position: absolute; right: 0; top: calc(100% + 5px); background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; min-width: 270px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); z-index: 200; }
+    .dl-wrap.open .dl-menu { display: block; }
+    .dl-opt { display: flex; align-items: flex-start; gap: 11px; padding: 13px 15px; cursor: pointer; border-bottom: 1px solid #f3f4f6; transition: background 0.12s; }
+    .dl-opt:last-child { border-bottom: none; }
+    .dl-opt:hover { background: #f9fafb; }
+    .dl-opt-ico { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+    .dl-opt-title { font-size: 0.84rem; font-weight: 700; color: #111827; margin-bottom: 2px; }
+    .dl-opt-desc { font-size: 0.74rem; color: #6b7280; line-height: 1.45; }
+    
+    .auth-note { border-left: 4px solid #f59e0b; border-radius: 0 6px 6px 0; padding: 12px 16px; }
+    .auth-note.jwt    { background: #fffbeb; }
+    .auth-note.cookie { background: #f0fdf4; border-left-color: #22c55e; }
+    .auth-note.none   { background: #f9fafb; border-left-color: #9ca3af; }
+    .auth-note-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; margin-bottom: 5px; }
+    .auth-note.jwt    .auth-note-title { color: #d97706; }
+    .auth-note.cookie .auth-note-title { color: #16a34a; }
+    .auth-note.none   .auth-note-title { color: #4b5563; }
+    .auth-note-text { font-size: 0.83rem; line-height: 1.6; }
+    .auth-note.jwt    .auth-note-text { color: #92400e; }
+    .auth-note.cookie .auth-note-text { color: #166534; }
+    .auth-note.none   .auth-note-text { color: #4b5563; }
+    .auth-note-text code { padding: 0 4px; border-radius: 3px; font-family: 'DM Mono', monospace; font-size: 0.8em; background: rgba(0,0,0,0.05); color: #111827; }
+    
+    .explainer { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 22px 26px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .explainer h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 10px; color: #111827;}
+    .explainer p { font-size: 0.88rem; color: #4b5563; line-height: 1.75; margin-bottom: 10px; }
+    .explainer p:last-child { margin-bottom: 0; }
+    .explainer strong { color: #111827; }
+    
+    .glossary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 11px; }
+    .gc { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .gc-val  { font-size: 1.35rem; font-weight: 800; font-family: 'DM Mono', monospace; margin-bottom: 3px; }
+    .gc-term { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .gc-def  { font-size: 0.78rem; color: #6b7280; line-height: 1.5; }
+    
+    .verdict { border-radius: 10px; padding: 32px 36px; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .verdict.pass   { border: 2px solid #22c55e; }
+    .verdict.review { border: 2px solid #f59e0b; }
+    .verdict.fail   { border: 2px solid #ef4444; border-left: 8px solid #ef4444; }
+    .v-pct  { font-size: 3rem; font-weight: 800; font-family: 'DM Mono', monospace; line-height: 1; margin-bottom: 6px; }
+    .v-rule { width: 60px; height: 2px; margin: 14px 0; }
+    .v-head { font-size: 2.2rem; font-weight: 800; line-height: 1; margin-bottom: 8px; }
+    .v-sub  { font-size: 0.92rem; color: #6b7280; margin-bottom: 0; }
+    
+    .bkdn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 24px; }
+    .bk { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; }
+    .bk-val   { font-size: 1.7rem; font-weight: 800; font-family: 'DM Mono', monospace; margin-bottom: 4px; }
+    .bk-label { font-size: 0.74rem; font-weight: 700; margin-bottom: 5px; }
+    .bk-desc  { font-size: 0.78rem; color: #6b7280; line-height: 1.45; }
+    
+    .final-stmt { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 7px; padding: 18px 22px; margin-top: 22px; }
+    .final-stmt p { font-size: 0.88rem; line-height: 1.75; color: #374151; }
+    .final-stmt strong { color: #111827; }
+    
+    .v-actions { margin-top: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .v-btn { display: inline-block; padding: 10px 22px; border-radius: 5px; text-decoration: none; font-weight: 700; font-size: 0.88rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .v-btn.pass   { background: #22c55e; color: #ffffff; }
+    .v-btn.review { background: #f59e0b; color: #ffffff; }
+    .v-btn.fail   { background: #ef4444; color: #ffffff; }
+    .v-meta { font-size: 0.7rem; color: #6b7280; font-family: 'DM Mono', monospace; line-height: 1.7; }
+    
+    .tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid #e5e7eb; margin-bottom: 24px; }
+    .tab { background: transparent; border: none; color: #6b7280; padding: 11px 18px; cursor: pointer; font-size: 0.85rem; font-weight: 600; font-family: 'Bricolage Grotesque', sans-serif; display: flex; align-items: center; gap: 7px; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; transition: color 0.15s; }
+    .tab:hover { color: #374151; }
+    .tab.active { color: #1d4ed8; border-bottom-color: #2563eb; }
+    .tab-ct { padding: 1px 6px; border-radius: 9px; font-size: 0.67rem; font-weight: 700; background: #e5e7eb; color: #4b5563; }
+    .tab.active .tab-ct { background: #dbeafe; color: #1d4ed8; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    
+    .p-intro { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 12px 16px; margin-bottom: 20px; font-size: 0.84rem; color: #1e40af; line-height: 1.6; border-radius: 0 5px 5px 0; }
+    .p-intro strong { color: #1e3a8a; }
+    
+    .mf { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+    .mf-lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-right: 4px; }
+    .mf-btn { background: #ffffff; border: 1px solid #d1d5db; color: #4b5563; padding: 5px 11px; border-radius: 4px; cursor: pointer; font-size: 0.78rem; font-weight: 600; font-family: 'DM Mono', monospace; transition: all 0.12s; }
+    .mf-btn:hover { border-color: #2563eb; color: #1d4ed8; }
+    .mf-btn.active { background: #eff6ff; border-color: #2563eb; color: #1d4ed8; }
+    .mf-shown { color: #6b7280; font-size: 0.74rem; }
+    
+    .evt { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 7px; padding: 18px; margin-bottom: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+    .evt.diverged { box-shadow: 0 2px 5px rgba(0,0,0,0.06); border-left: 3px solid; }
+    .evt.diverged.expected    { border-left-color: #22c55e; }
+    .evt.diverged.investigate { border-left-color: #f59e0b; }
+    .evt.diverged.critical    { border-left-color: #ef4444; }
+    .evt-hdr { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; flex-wrap: wrap; }
+    
+    .meth { font-family: 'DM Mono', monospace; font-weight: 700; font-size: 0.78rem; padding: 3px 8px; border-radius: 3px; }
+    .meth.GET    { background: #dbeafe; color: #1d4ed8; }
+    .meth.POST   { background: #dcfce7; color: #15803d; }
+    .meth.PUT    { background: #fef3c7; color: #b45309; }
+    .meth.DELETE { background: #fee2e2; color: #b91c1c; }
+    .meth.PATCH  { background: #f3e8ff; color: #7e22ce; }
+    
+    .evt-path { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: #111827; flex: 1; word-break: break-all; min-width: 0; }
+    .tier-bdg { padding: 2px 7px; border-radius: 3px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+    .tier-bdg.EXPECTED    { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+    .tier-bdg.INVESTIGATE { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+    .tier-bdg.CRITICAL    { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .tier-bdg.ok          { background: #f8fafc; color: #0f766e; border: 1px solid #ccfbf1; }
+    .evt-id { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: #6b7280; background: #f3f4f6; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+    
+    .evt-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .abox { background: #f9fafb; border: 1px solid #f3f4f6; border-radius: 5px; padding: 11px 13px; min-width: 0; overflow: hidden; }
+    .albl { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 5px; }
+    .atxt { font-size: 0.84rem; color: #111827; line-height: 1.45; word-break: break-all; overflow-wrap: break-word; }
+    
+    .evt-sts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stbox { background: #f9fafb; border: 1px solid #f3f4f6; border-radius: 5px; padding: 11px 13px; }
+    .stlbl { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 4px; }
+    .stcode { font-size: 1.6rem; font-weight: 800; font-family: 'DM Mono', monospace; line-height: 1; margin-bottom: 2px; }
+    .sttxt  { font-size: 0.68rem; color: #4b5563; }
+    
+    .edet { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 5px; padding: 11px 13px; margin-top: 9px; }
+    .edet.diff { background: #f8fafc; border: 1px dashed #cbd5e1; } /* Subtle dashed box for raw data */
+    .edet-lbl  { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 5px; }
+    .edet-txt  { font-size: 0.84rem; color: #1f2937; line-height: 1.55; }
+    .edet.diff .edet-txt { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: #475569; word-break: break-all; }
+    .empty { text-align: center; padding: 48px 20px; color: #6b7280; font-size: 0.95rem; }
+    
+    @media (max-width: 720px) {
+      .bkdn, .evt-acts, .evt-sts { grid-template-columns: 1fr; }
+      .v-pct { font-size: 2.2rem; }
+      .v-head { font-size: 1.6rem; }
+      .topbar-inner { flex-direction: column; align-items: flex-start; }
+      .glossary { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap">
+    <div class="topbar-inner">
+      <div>
+        <div class="brand">
+          <div class="brand-name">DLTRF</div>
+          <div class="brand-sub">Replay Report</div>
+        </div>
+        <div class="meta">
+          <strong>r-2565b3bd</strong> &middot; <br>
+          0 events &middot; 0.0s &middot; 100.0% repro
+          <span class="mbadge no">⚠ no auth</span>
+        </div>
+      </div>
+      <div class="dl-wrap" id="dlWrap">
+        <button class="dl-btn" onclick="toggleDl(event)" type="button">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0">
+            <path d="M7 1v7M4.5 6l2.5 2.5L9.5 6M1.5 11.5h11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Download <span class="dl-chev">▼</span>
+        </button>
+        <div class="dl-menu" id="dlMenu">
+          <div class="dl-opt" onclick="doDownload('full')" role="button">
+            <div class="dl-opt-ico">📋</div>
+            <div><div class="dl-opt-title">Full Report</div><div class="dl-opt-desc">All 0 session events — every request log included.</div></div>
+          </div>
+          <div class="dl-opt" onclick="doDownload('summary')" role="button">
+            <div class="dl-opt-ico">📊</div>
+            <div><div class="dl-opt-title">Summary Only</div><div class="dl-opt-desc">Verdict + metrics, no request logs. Good for sharing upwards.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="padding: 16px 0 0">
+  <div class="wrap">
+    <div class="auth-note none">
+      <div class="auth-note-title">⏱ Auth note</div>
+      <div class="auth-note-text"><strong>No auth was detected in this recording.</strong> If you expected authenticated requests, check that your app uses either a Bearer token (<code>Authorization</code> header) or session cookies (<code>Cookie</code> header). Nginx must log <code>$http_authorization</code> and <code>$http_cookie</code>.</div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <div class="sec-label">What is this</div>
+    <div class="explainer">
+      <h2>DLTRF — Deterministic Log Test Replay Framework</h2>
+      <p>Records every HTTP request your browser makes during a session, then <strong>replays those exact requests</strong> and compares the responses. If the server returns the same thing, the app is deterministic. If not, something changed.</p>
+      <p style="font-size:0.84rem">Useful for catching bugs that only show up under specific conditions — race conditions, state-dependent behaviour, stuff that doesn't reproduce in unit tests.</p>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top: 36px">
+  <div class="wrap">
+    <div class="sec-label">Numbers</div>
+    <div class="glossary">
+      <div class="gc">
+        <div class="gc-val" style="color:#2563eb">0</div>
+        <div class="gc-term" style="color:#2563eb">Events replayed</div>
+        <div class="gc-def">HTTP requests re-executed. One event = one request your browser made.</div>
+      </div>
+      <div class="gc">
+        <div class="gc-val" style="color:#16a34a">100.0%</div>
+        <div class="gc-term" style="color:#16a34a">Repro rate</div>
+        <div class="gc-def">Requests that got the same response. Cache noise excluded — so this is an honest number.</div>
+      </div>
+      <div class="gc">
+        <div class="gc-val" style="color:#16a34a">0</div>
+        <div class="gc-term" style="color:#16a34a">Exact matches</div>
+        <div class="gc-def">Same status code both times. Fully deterministic.</div>
+      </div>
+      <div class="gc">
+        <div class="gc-val" style="color:#22c55e">0</div>
+        <div class="gc-term" style="color:#22c55e">Expected noise</div>
+        <div class="gc-def">Cache 304→200, WebSocket session expiry, CSRF tokens. Not bugs — excluded from repro rate.</div>
+      </div>
+      <div class="gc">
+        <div class="gc-val" style="color:#d97706">0</div>
+        <div class="gc-term" style="color:#d97706">Needs a look</div>
+        <div class="gc-def">Diverged for a reviewable reason — usually auth or session state. Check auth expiry first.</div>
+      </div>
+      <div class="gc">
+        <div class="gc-val" style="color:#16a34a">0</div>
+        <div class="gc-term" style="color:#16a34a">Mismatches</div>
+        <div class="gc-def">Different response, same input. Real non-determinism — race conditions, random IDs, that kind of thing.</div>
+      </div>
+      <div class="gc">
+        <div class="gc-val" style="color:#4b5563">0ms</div>
+        <div class="gc-term">Avg response</div>
+        <div class="gc-def">Per request. Useful for catching perf regressions between sessions.</div>
+      </div>
+      <div class="gc">
+        <div class="gc-val" style="color:#4b5563">0.0s</div>
+        <div class="gc-term">Total time</div>
+        <div class="gc-def">Full replay duration including network + comparison + report gen.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-label">Final verdict — session replay complete</div>
+    
+    <div class="verdict pass">
+      <div class="v-pct" style="color:#16a34a">100.0%</div>
+      <div class="v-rule" style="background:#16a34a"></div>
+      <div class="v-head" style="color:#16a34a">PASS</div>
+      <div class="v-sub">Looks good to ship</div>
+      <div class="bkdn">
+        <div class="bk" style="border-left:2px solid #16a34a">
+          <div class="bk-val" style="color:#16a34a">0</div>
+          <div class="bk-label" style="color:#16a34a">What worked</div>
+          <div class="bk-desc">0 reproduced fine.</div>
+        </div>
+        <div class="bk" style="border-left:2px solid #22c55e">
+          <div class="bk-val" style="color:#22c55e">0</div>
+          <div class="bk-label" style="color:#22c55e">Expected noise</div>
+          <div class="bk-desc">None detected.</div>
+        </div>
+        <div class="bk" style="border-left:2px solid #16a34a">
+          <div class="bk-val" style="color:#16a34a">0</div>
+          <div class="bk-label" style="color:#16a34a">Mismatches</div>
+          <div class="bk-desc">No request came back differently. App is deterministic.</div>
+        </div>
+      </div>
+      <div class="final-stmt"><p><strong>0 requests reproduced exactly.</strong> No race conditions, no random IDs, nothing time-dependent. <strong>Clear to promote.</strong></p></div>
+      <div class="v-actions">
+        <a class="v-btn pass" href="#">✓ Promote to next environment</a>
+        <div class="v-meta">r-2565b3bd<br><br>0 events · 0.0s · 100.0%</div>
+      </div>
+    </div>
+    
+  </div>
+</section>
+
+<section id="dev-detail" style="padding-bottom: 64px">
+  <div class="wrap">
+    <div class="sec-label">Developer detail</div>
+    <p style="color:#4b5563; font-size:.84rem; margin-bottom:22px; line-height:1.6">Per-request breakdown — what happened and why.</p>
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('session',this)">👤 Your Session <span class="tab-ct">0</span></button>
+      <button class="tab" onclick="showTab('expected',this)">🟢 Expected Noise <span class="tab-ct">0</span></button>
+      <button class="tab" onclick="showTab('investigate',this)">🟠 Needs Investigation <span class="tab-ct">0</span></button>
+      <button class="tab" onclick="showTab('critical',this)">🔴 Genuine Bugs <span class="tab-ct">0</span></button>
+    </div>
+
+    
+
+    <div id="panel-session" class="panel active">
+      <div class="p-intro">
+        All 0 requests. Green badge = exact match.
+        <strong>No auth detected — auth endpoints likely got 401/419. Check the auth expiry note above.</strong>
+      </div>
+      <div class="mf">
+        <span class="mf-lbl">Filter:</span>
+        <button class="mf-btn active" id="mf-ALL" onclick="filterM('ALL',this)">All (0)</button>
+        <button class="mf-btn" id="mf-GET"    onclick="filterM('GET',this)">GET <span id="cnt-GET"></span></button>
+        <button class="mf-btn" id="mf-POST"   onclick="filterM('POST',this)">POST <span id="cnt-POST"></span></button>
+        <button class="mf-btn" id="mf-PUT"    onclick="filterM('PUT',this)">PUT <span id="cnt-PUT"></span></button>
+        <button class="mf-btn" id="mf-DELETE" onclick="filterM('DELETE',this)">DELETE <span id="cnt-DELETE"></span></button>
+        <span class="mf-shown" id="mf-shown"></span>
+      </div>
+      <div id="session-cards">
+        <div class="empty">✓ All reproduced</div>
+      </div>
+    </div>
+
+    <div id="panel-expected" class="panel">
+      <div class="p-intro"><strong>Not bugs.</strong> Cache (RFC 7234): 304 during recording → 200 during replay (no browser cache). WebSocket (RFC 6455): session IDs expire. CSRF tokens (Laravel/Rails/Django): one-time use tokens return 419 on replay. 0 events excluded from repro rate.</div>
+      <div class="empty">None</div>
+    </div>
+
+    <div id="panel-investigate" class="panel">
+      <div class="p-intro"><strong>Nothing to investigate.</strong></div>
+      <div class="empty">✓ Clear</div>
+    </div>
+
+    <div id="panel-critical" class="panel">
+      <div class="p-intro"><strong>Real mismatches</strong> — same request, different response. This is what DLTRF is for.</div>
+      <div class="empty">✓ Zero mismatches</div>
+    </div>
+  </div>
+</section>
+
+<script>
+function showTab(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+function filterM(method, btn) {
+  ['ALL','GET','POST','PUT','DELETE'].forEach(m => {
+    var b = document.getElementById('mf-' + m);
+    if (b) b.classList.toggle('active', m === method);
+  });
+  var cards = document.querySelectorAll('#session-cards .evt-card'), shown = 0;
+  cards.forEach(c => {
+    var vis = method === 'ALL' || c.getAttribute('data-method') === method;
+    c.style.display = vis ? '' : 'none';
+    if (vis) shown++;
+  });
+  var el = document.getElementById('mf-shown');
+  if (el) el.textContent = method === 'ALL' ? '' : shown + ' shown';
+}
+document.addEventListener('DOMContentLoaded', function() {
+  ['GET','POST','PUT','DELETE'].forEach(function(m) {
+    var n = document.querySelectorAll('#session-cards .evt-card[data-method="' + m + '"]').length;
+    var el = document.getElementById('cnt-' + m);
+    if (el) el.textContent = '(' + n + ')';
+    if (n === 0 && document.getElementById('mf-' + m))
+      document.getElementById('mf-' + m).style.display = 'none';
+  });
+});
+function toggleDl(e) {
+  e.stopPropagation();
+  document.getElementById('dlWrap').classList.toggle('open');
+}
+document.addEventListener('click', function() {
+  var w = document.getElementById('dlWrap');
+  if (w) w.classList.remove('open');
+});
+function doDownload(mode) {
+  document.getElementById('dlWrap').classList.remove('open');
+  var html, filename;
+  if (mode === 'full') {
+    html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    filename = 'dltrf-full-r-2565b3bd.html';
+  } else {
+    var clone = document.documentElement.cloneNode(true);
+    var sec = clone.querySelector('#dev-detail');
+    if (sec) sec.remove();
+    clone.querySelectorAll('script').forEach(s => s.remove());
+    var verdict = clone.querySelector('.verdict');
+    if (verdict) {
+      var note = document.createElement('div');
+      note.style.cssText = 'background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:12px 16px;margin-top:16px;font-size:0.74rem;color:#4b5563;font-family:DM Mono,monospace';
+      note.textContent = 'ℹ Request logs excluded. Download full report for per-request detail.';
+      verdict.parentNode.insertBefore(note, verdict.nextSibling);
+    }
+    html = '<!DOCTYPE html>\n' + clone.outerHTML;
+    filename = 'dltrf-summary-r-2565b3bd.html';
+  }
+  var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+</script>
+</body>
+</html>
