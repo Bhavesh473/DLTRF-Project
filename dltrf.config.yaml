@@ -1,0 +1,17 @@
+name: "juiceshop"
+profile: "profiles/juiceshop.yaml"
+
+target:
+  host: juice-shop
+  port: 3000
+  protocol: http
+
+proxy_port: 3000
+
+database:
+  type: sqlite
+  container: juice-shop
+  sqlite_path: /juice-shop/data/juiceshop.sqlite
+
+recording:
+  max_events: 200

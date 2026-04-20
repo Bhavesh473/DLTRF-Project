@@ -1,0 +1,136 @@
+# divergence_config.yaml — PrestaShop E-Commerce Profile
+# ─────────────────────────────────────────────────────────────────────────────
+# This profile handles the expected state drift for PrestaShop, including
+# dynamic shopping carts, order reference generation, and session cookies.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── App metadata ─────────────────────────────────────────────────────────────
+app:
+  name: "PrestaShop"
+  description: "Official PHP/MySQL E-Commerce Platform."
+  auth_mode_hint: "cookie"
+
+jwt_expiry_hours: 12
+
+# ── Auth notes ───────────────────────────────────────────────────────────────
+auth_notes:
+  cookie:
+    title: "⏱ PrestaShop Session"
+    body: >
+      <strong>PrestaShop uses strictly cookie-based sessions.</strong>
+      Ensure the database checkpoint is restored before replay so the replayed
+      cart and session state perfectly matches the recorded state.
+  jwt:
+    title: "⏱ JWT"
+    body: "Not typically used in default PrestaShop storefronts."
+  none:
+    title: "⏱ Anonymous Checkout"
+    body: "Testing guest checkout flow. No prior auth cookies required."
+
+# ── Body noise ───────────────────────────────────────────────────────────────
+# Fields stripped before DeepDiff to prevent false positives.
+body_noise:
+  # Timestamps & Dates
+  - "timestamp"
+  - "date_add"
+  - "date_upd"
+  - "time"
+  - "date"
+  # Security & Session Tokens
+  - "token"
+  - "_token"
+  - "csrf"
+  - "PHPSESSID"
+  - "id_guest"
+  - "id_connections"
+  # General noise
+  - "ETag"
+  - "X-Request-Id"
+
+# ── Global noise ─────────────────────────────────────────────────────────────
+global_noise:
+  status_transitions:
+    - from: 304
+      to: 200
+      reason: >
+        Browser returned a cached response (304 Not Modified) during recording.
+        Replay has no browser cache, so the server sends the full resource (200 OK).
+      recommendation: "Not a bug. Automatically excluded from reproducibility rate."
+
+    - from: 302
+      to: 302
+      reason: >
+        Standard POST/Redirect/GET pattern. A form POST redirects on both
+        the original recording and the replay.
+      recommendation: "Not a bug. The redirect pattern is working as designed."
+
+# ── Endpoints ────────────────────────────────────────────────────────────────
+websocket_path_fragments: []
+
+auth_path_fragments:
+  - "controller=authentication"
+  - "login"
+  - "logout"
+  - "password"
+
+resource_creation_path_fragments:
+  - "register"
+  - "signup"
+  - "account-creation"
+
+upload_path_fragments:
+  - "upload"
+  - "attachment"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CUSTOM RULES (PrestaShop Profile)
+# ─────────────────────────────────────────────────────────────────────────────
+custom_rules:
+
+  # ── 1. AJAX Cart Additions ─────────────────────────────────────────────────
+  - id: "prestashop-ajax-cart"
+    label: "Cart State Drift (AJAX)"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "*/index.php?controller=cart*"
+        - "*/cart*"
+      methods: [POST]
+      replay_statuses: [200]
+    reason: >
+      Adding items to the cart mutates the JSON response totals, item counts,
+      and cart IDs. If the database wasn't checkpointed perfectly, the total
+      price and quantity strings will diverge.
+    recommendation: >
+      Expected E-Commerce behavior. Ensure DB is checkpointed properly to minimize diffs.
+
+  # ── 2. Checkout & Order Generation ─────────────────────────────────────────
+  - id: "prestashop-checkout-state"
+    label: "Order Generation Auto-Increment"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "*/index.php?controller=order*"
+        - "*/order-confirmation*"
+      methods: [POST, GET]
+    reason: >
+      Completing a checkout generates a new unique Order Reference/ID in the
+      database. Replaying this will generate a different ID, causing HTML body divergences
+      on the success page.
+    recommendation: >
+      Expected E-Commerce state drift. The app is working perfectly.
+
+  # ── 3. Admin Token Drift (If testing Admin panel) ──────────────────────────
+  - id: "prestashop-admin-token"
+    label: "Admin Security Token Mismatch"
+    tier: INVESTIGATE
+    match:
+      path_patterns:
+        - "*/admin*/*"
+      replay_statuses: [302, 403]
+    reason: >
+      PrestaShop's admin panel enforces strict security tokens in the URL query string 
+      (e.g., &token=...). The recorded token is invalid for the newly generated replay session.
+    recommendation: >
+      Advanced URL-rewriting is required to replay admin flows. For this test, stick to 
+      Storefront (Customer) flows.

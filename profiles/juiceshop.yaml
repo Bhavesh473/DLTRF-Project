@@ -1,0 +1,71 @@
+app:
+  name: "OWASP Juice Shop"
+  description: "Modern Single Page Application (Angular + Node.js + REST). Uses JWTs."
+  auth_mode_hint: "jwt"
+
+jwt_expiry_hours: 8
+
+websocket_path_fragments:
+  - "socket.io"
+
+body_noise:
+  - "timestamp"
+  - "createdAt"
+  - "updatedAt"
+  - "token"
+  - "iat"
+  - "exp"
+  - "BasketId"
+  - "AuthenticationTicket"
+
+global_noise:
+  status_transitions:
+    - from: 304
+      to: 200
+
+custom_rules:
+  - id: "juiceshop-basket-drift"
+    label: "Dynamic Basket ID Generation"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/api/Baskets/*"
+        - "/api/BasketItems/*"
+        - "/rest/basket/*"
+
+  - id: "juiceshop-ecommerce-drift"
+    label: "Dynamic E-Commerce IDs"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/api/Addresss*"
+        - "/api/Cards*"
+        - "/api/Deliverys*"
+        - "/rest/track-order/*"
+        - "/api/Quantitys*"
+        - "/api/Products*"
+        - "/rest/products/search*"
+    reason: "Addresses, Cards, and Orders are dynamically generated."
+
+  - id: "juiceshop-whoami"   
+    label: "Session Token Validation"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/rest/user/whoami*"
+        - "/profile*"
+        - "/rest/admin/*"
+        - "/rest/languages*"
+        - "/api/SecurityAnswers*"
+        - "/api/SecurityQuestions*"
+
+  - id: "juiceshop-metrics"
+    label: "Background Telemetry & Assets"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/metrics"
+        - "/assets/*"
+        - "/*.js"
+        - "/*.css"
+        - "/vendor/*"

@@ -1,0 +1,434 @@
+# divergence_config.yaml — DLTRF App-Agnostic Base Profile
+# ─────────────────────────────────────────────────────────────────────────────
+# This file is the single source of truth for ALL divergence classification.
+# report_generator.py contains zero app-specific logic — it only renders what
+# this file decides.
+#
+# Hot-reload without a full rebuild:
+#   docker cp divergence_config.yaml replay-engine:/app/divergence_config.yaml
+#   docker restart replay-engine
+#
+# CLASSIFICATION TIERS (in order of precedence):
+#   EXPECTED   — known noise, excluded from repro rate, no action needed
+#   INVESTIGATE — diverged but explainable; review before promoting
+#   CRITICAL   — genuine non-determinism with NO matching rule; do not ship
+#
+# RULE EVALUATION ORDER:
+#   1. custom_rules (top-to-bottom, first match wins)
+#   2. global_noise.status_transitions
+#   3. Engine's original tier (fallback — only hits if NO rule matched)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── App metadata (optional — shown in report header) ─────────────────────────
+app:
+  name: "BookStack"
+  description: "Laravel-based documentation wiki. Sessions stored in MySQL."
+  auth_mode_hint: "cookie"
+
+
+# ── Auth expiry hours ─────────────────────────────────────────────────────────
+jwt_expiry_hours: 12
+
+
+# ── Auth notes — shown in the report banner, per auth mode ───────────────────
+auth_notes:
+  jwt:
+    title: "⏱ JWT expiry"
+    body: >
+      <strong>Tokens expire after 12 hours.</strong>
+      If you're seeing 401s in INVESTIGATE and the app was fine before,
+      just re-record — don't waste time debugging.
+      The token comes from <code>auth_header</code> in nginx logs.
+
+  cookie:
+    title: "⏱ Session expiry"
+    body: >
+      <strong>Session cookies expire after ~12 hours.</strong>
+      If you're seeing 419s (CSRF mismatch) or 401/403s in INVESTIGATE
+      and the app was fine before, re-record a fresh session.
+      The cookie comes from <code>cookie_header</code> in nginx logs.
+      Ensure your app stores sessions in a persistent database that is
+      restored by your checkpoint script — not in flat files or memory.
+
+  none:
+    title: "⏱ Auth note"
+    body: >
+      <strong>No auth was detected in this recording.</strong>
+      If you expected authenticated requests, check that your app sends
+      either a Bearer token (<code>Authorization</code> header) or
+      session cookies (<code>Cookie</code> header).
+      Nginx must log <code>$http_authorization</code> and <code>$http_cookie</code>.
+
+
+# ── Body noise ────────────────────────────────────────────────────────────────
+body_noise:
+  - "timestamp"
+  - "created_at"
+  - "updated_at"
+  - "createdAt"
+  - "updatedAt"
+  - "deleted_at"
+  - "deletedAt"
+  - "published_at"
+  - "publishedAt"
+  - "lastLogin"
+  - "lastLoginAt"
+  - "lastLoginIp"
+  - "time"
+  - "date"
+  - "Date"
+  - "iat"
+  - "exp"
+  - "nbf"
+  - "token"
+  - "access_token"
+  - "refresh_token"
+  - "refreshToken"
+  - "id_token"
+  - "jwt"
+  - "sessionId"
+  - "session_id"
+  - "csrfToken"
+  - "_token"
+  - "remember_token"
+  - "nonce"
+  - "ETag"
+  - "etag"
+  - "X-Request-Id"
+  - "X-Correlation-Id"
+  - "X-Trace-Id"
+  - "CF-RAY"
+  - "X-Amzn-Trace-Id"
+  - "X-Request-Start"
+
+
+# ── Global noise — universal HTTP status transitions ──────────────────────────
+global_noise:
+  status_transitions:
+
+    - from: 304
+      to: 200
+      reason: >
+        Browser returned a cached response (304 Not Modified) during recording.
+        Replay has no browser cache, so the server sends the full resource (200 OK).
+        This is RFC 7234 cache behaviour, not a bug.
+      recommendation: "Not a bug. Automatically excluded from reproducibility rate."
+
+    - from: 304
+      to: 401
+      reason: >
+        The request was served from browser cache during recording (304).
+        By replay time the auth token or session has expired, so the server
+        rejects the real request with 401 Unauthorized.
+      recommendation: >
+        Re-record a fresh session, or ensure authentication warmup
+        runs successfully before replay starts.
+
+    - from: 200
+      to: 429
+      reason: >
+        Replay fires requests faster than a human browser. The app's rate
+        limiter triggered and returned 429 Too Many Requests.
+      recommendation: >
+        Reduce replay concurrency or add inter-request delay in your
+        replay configuration.
+
+    - from: 302
+      to: 419
+      reason: >
+        CSRF token mismatch. The app rejected the replayed CSRF token because
+        CSRF tokens are single-use. This is expected behaviour in Laravel,
+        Rails, Django, and any app using the Synchroniser Token Pattern.
+      recommendation: >
+        Ensure the target app stores sessions in a persistent database that
+        is restored by your checkpoint script. For Laravel, set
+        SESSION_DRIVER=database. The 419 itself is correct — the app is
+        protecting against replay attacks, which is exactly what DLTRF does.
+
+    - from: 200
+      to: 419
+      reason: >
+        CSRF token mismatch on a non-redirect endpoint. The CSRF token from
+        recording is no longer valid at replay time — single-use by design.
+      recommendation: >
+        This is expected Laravel/Rails/Django behaviour. Not a bug.
+
+    - from: 302
+      to: 302
+      reason: >
+        Standard POST/Redirect/GET pattern. A form POST redirects on both
+        the original recording and the replay. Destination may differ due
+        to session state, but the redirect mechanism itself is correct.
+      recommendation: "Not a bug. The redirect pattern is working as designed."
+
+
+# ── WebSocket / real-time paths ───────────────────────────────────────────────
+websocket_path_fragments:
+  - "socket.io"
+  - "/ws"
+  - "/wss"
+  - "websocket"
+  - "livereload"
+  - "hot-update"
+  - "/__webpack_hmr"
+  - "broadcasting"
+
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+auth_path_fragments:
+  - "login"
+  - "logout"
+  - "signin"
+  - "sign_in"
+  - "sign_out"
+  - "signout"
+  - "auth/token"
+  - "oauth/token"
+  - "oauth2/token"
+  - "token/refresh"
+  - "token/obtain"
+  - "session/new"
+  - "sessions"
+  - "authenticate"
+  - "password/reset"
+  - "password/forgot"
+  - "forgot_password"
+  - "reset_password"
+  - "two_factor"
+  - "2fa"
+  - "verify_email"
+  - "email/verify"
+
+
+# ── Resource creation endpoints ───────────────────────────────────────────────
+resource_creation_path_fragments:
+  - "register"
+  - "signup"
+  - "sign_up"
+  - "account/create"
+  - "auth/register"
+  - "users/new"
+  - "api/users"
+
+
+# ── File upload / multipart endpoints ─────────────────────────────────────────
+upload_path_fragments:
+  - "upload"
+  - "uploads"
+  - "attachment"
+  - "attachments"
+  - "media"
+  - "avatar"
+  - "photo"
+  - "picture"
+  - "image/upload"
+  - "file/upload"
+  - "import"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CUSTOM RULES (BookStack Profile)
+#
+# KEY DESIGN PRINCIPLE:
+#   A rule with tier: EXPECTED means "we understand why this happened,
+#   it is not a bug, exclude it from the repro rate."
+#
+#   A rule with tier: INVESTIGATE means "we understand the cause but a
+#   human should verify it before promoting."
+#
+#   Items with NO matching rule that still diverge → CRITICAL (genuine bugs).
+#   The verdict logic in report_generator.py only counts items where
+#   rule_id == "no_match" as genuine bugs for the FAIL verdict.
+#   Everything else — even if visually shown as CRITICAL tier — is classified
+#   and explained, so the developer knows exactly what happened.
+# ─────────────────────────────────────────────────────────────────────────────
+
+custom_rules:
+
+  # ── 1. Webhook CRUD state drift ───────────────────────────────────────────
+  # When a webhook is created and then deleted within the same recorded session,
+  # replay cannot find it (it was deleted before replay ran). The 404 is correct
+  # behaviour from BookStack. This is a recording hygiene issue, not a bug.
+  - id: "bookstack-webhook-state-drift"
+    label: "Webhook CRUD State Drift"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/settings/webhooks*"
+      replay_statuses: [404]
+    reason: >
+      STATE DRIFT: This 404 occurred because the webhook was created and then
+      deleted within the same recorded session. On replay the database is
+      restored to the pre-recording checkpoint, so the webhook does not exist.
+      BookStack is behaving correctly — this is a recording hygiene issue.
+    recommendation: >
+      Do not create and delete resources within the same recording session if
+      you want replay to reproduce those requests. Record a session where the
+      webhook already exists, or restore a checkpoint that includes the webhook.
+
+  # ── 2. BookStack dynamic URL slugs ───────────────────────────────────────
+  # BookStack appends random short suffixes to URL slugs to prevent name
+  # collisions (e.g. /shelves/my-shelf-aBc). If the slug suffix differs
+  # between recording and replay (because the DB was reset), the GET returns
+  # 404. This is expected state drift, not a BookStack bug.
+  - id: "bookstack-dynamic-slugs"
+    label: "Dynamic URL Slug Mismatch"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/shelves/*"
+        - "/books/*"
+        - "/books/*/chapters/*"
+        - "/books/*/pages/*"
+      methods: [GET]
+      replay_statuses: [404]
+    reason: >
+      BookStack generates random slug suffixes (e.g. "-iAr") to prevent name
+      collisions. After a DB reset and re-seed the suffixes differ from the
+      recorded session, so the exact URL path no longer exists. The app is
+      behaving correctly.
+    recommendation: >
+      Expected behaviour after a DB reset. Use the checkpoint/restore workflow
+      to preserve slug state between recording and replay. Not a BookStack bug.
+
+  # ── 3. Profile / settings auth cascade ───────────────────────────────────
+  # If the replay login POST fails or the session is lost mid-replay,
+  # subsequent authenticated pages redirect to /login instead of rendering.
+  # This cascades from the first auth failure, not from individual page bugs.
+  - id: "bookstack-auth-cascade-redirect"
+    label: "Auth Cascade — Redirected to Login"
+    tier: INVESTIGATE
+    match:
+      path_patterns:
+        - "/my-account/*"
+        - "/settings/*"
+        - "/shelves*"
+        - "/books*"
+        - "/pages*"
+      original_statuses: [200]
+      replay_statuses: [302]
+    reason: >
+      This page redirected to login during replay. This is almost always caused
+      by an earlier authentication failure — once the session is lost, all
+      protected pages cascade to 302 redirects. The page itself is not buggy.
+    recommendation: >
+      Check the POST /login event in this report. If it shows 302 (success),
+      the session was established correctly and this redirect is unexpected —
+      investigate session persistence. If POST /login shows 419 or 500, fix
+      the login step first and all cascades will resolve.
+
+  # ── 4. Static asset 304→404 ───────────────────────────────────────────────
+  # After a DB/volume reset, uploaded images and user avatars no longer exist
+  # on disk. A browser cache hit (304) during recording becomes a real 404
+  # on replay because the file was wiped with the volume reset.
+  - id: "bookstack-static-asset-missing-after-reset"
+    label: "Static Asset Missing After Volume Reset"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/uploads/*"
+      original_statuses: [304, 200]
+      replay_statuses: [404]
+    reason: >
+      Uploaded files (avatars, cover images, attachments) are stored on the
+      BookStack volume. After a factory reset (docker compose down -v), the
+      volume is wiped so the files no longer exist. The 404 is correct — the
+      file is genuinely gone in the replay environment.
+    recommendation: >
+      Not a BookStack bug. If you need uploaded files to persist across resets,
+      back up the bookstack-app-data volume before resetting, or use a fixture
+      seeder to restore them. Excluded from reproducibility rate.
+
+  # ── 5. Logout CSRF mismatch ───────────────────────────────────────────────
+  # POST /logout requires a CSRF token. By the time replay reaches logout,
+  # the session has already been modified by replayed requests, so the token
+  # from the recording is stale. This is expected single-use token behaviour.
+  - id: "bookstack-logout-csrf"
+    label: "Logout CSRF Token Stale"
+    tier: EXPECTED
+    match:
+      path_patterns:
+        - "/logout"
+      methods: [POST]
+      replay_statuses: [419]
+    reason: >
+      POST /logout requires a valid CSRF token. By the time replay reaches the
+      logout request, the session state has changed (previous replayed POSTs
+      rotated the token). Laravel correctly rejects the stale token with 419.
+      This is single-use CSRF token behaviour, not a bug.
+    recommendation: >
+      Expected behaviour. The CSRF refresher scrapes a live token before each
+      POST, but the logout token may have been rotated by a preceding request
+      in the same replay batch. Not a BookStack bug.
+
+
+# ── EXAMPLE RULES (commented — copy and adapt for your own app) ──────────────
+
+# ── EXAMPLE A: CRUD state drift — resource created and deleted in one session ─
+# - id: "crud-state-drift-deleted-resource"
+#   label: "CRUD State Drift — Resource Deleted In Session"
+#   tier: EXPECTED
+#   match:
+#     path_patterns:
+#       - "/your-app/resource-type/*"
+#     methods: [GET, POST, PUT, PATCH]
+#     replay_statuses: [404]
+#   reason: >
+#     A resource was created and then deleted within the same recorded session.
+#     On replay the database checkpoint does not contain this resource, so the
+#     app correctly returns 404. This is a fixture issue, not an app bug.
+#   recommendation: >
+#     Seed the database checkpoint with a pre-existing resource at the recorded
+#     ID, or exclude these paths from replay.
+
+# ── EXAMPLE B: Feature-flagged routes ─────────────────────────────────────────
+# - id: "intentional-404-feature-flag"
+#   label: "Intentional 404 — Feature-Flagged Route"
+#   tier: EXPECTED
+#   match:
+#     path_patterns:
+#       - "/beta/*"
+#       - "/internal/*"
+#     replay_statuses: [404, 403]
+#   reason: >
+#     These routes are only accessible when specific feature flags are enabled.
+#     The replay environment runs with flags off, so the app correctly returns 404.
+#   recommendation: >
+#     Enable the relevant feature flags in the replay environment if you want
+#     to test these routes.
+
+# ── EXAMPLE C: Single-use token endpoints ─────────────────────────────────────
+# - id: "single-use-token-consumed"
+#   label: "Single-Use Token Already Consumed"
+#   tier: EXPECTED
+#   match:
+#     path_patterns:
+#       - "/verify/*"
+#       - "/confirm/*"
+#       - "/invite/*"
+#       - "/reset-password/*"
+#     replay_statuses: [404, 400, 410, 422]
+#   reason: >
+#     This endpoint consumes a single-use token that was already used during
+#     the recording session. The app is behaving correctly.
+#   recommendation: >
+#     Seed the database checkpoint with a fresh unused token, or exclude these
+#     paths from replay.
+
+# ── EXAMPLE D: Inbound webhooks from external services ────────────────────────
+# - id: "inbound-webhook-no-live-event"
+#   label: "Inbound Webhook — No Live Event in Replay"
+#   tier: EXPECTED
+#   match:
+#     path_patterns:
+#       - "/webhooks/*"
+#       - "/callbacks/*"
+#       - "/hooks/*"
+#     methods: [POST]
+#     replay_statuses: [400, 404, 422]
+#   reason: >
+#     This endpoint receives events from an external service. In the replay
+#     environment there are no live external events, so the app returns an error.
+#   recommendation: >
+#     Seed mock event payloads into the replay DB, or exclude inbound webhook
+#     paths from replay.
