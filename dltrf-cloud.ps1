@@ -199,26 +199,28 @@ function RunReplay {
 
     $replayId = $null
     $headers  = @{ "Authorization" = "Bearer $ENGINE_TOKEN"; "Content-Type" = "application/json" }
-    $bodyJson = '{"mode":"replay","max_events":200,"start_ts":"0","end_ts":"+"}'
+    $bodyJson = '{"mode":"replay","max_events":500,"start_ts":"0","end_ts":"+","enable_divergence_detection":true}'
 
     try {
         $response = Invoke-RestMethod -Uri "$ENGINE_API/replay/start" -Method POST -Headers $headers -Body $bodyJson -ErrorAction Stop
         $replayId = $response.replay_id
         PrintOk "Replay started - ID: $replayId"
     } catch {
-        PrintFail "Could not reach replay API. Is the VM running? Run: .\dltrf-cloud.ps1 status"
+        PrintFail "Could not reach replay API. Is the VM running?"
     }
 
     PrintInfo "Waiting for report to generate..."
     $elapsed = 0
     $found   = $false
+    
+    # Notice the corrected URL format here: /report/replay_${replayId}.html
+    $reportUrl = "$ENGINE_API/report/replay_${replayId}.html"
 
     while ($elapsed -lt 300) {
         Start-Sleep -Seconds 3
         $elapsed += 3
         try {
-            # ADD THE /$replayId HERE
-            $check = Invoke-WebRequest -Uri "$ENGINE_API/report/$replayId" -UseBasicParsing -ErrorAction Stop
+            $check = Invoke-WebRequest -Uri $reportUrl -UseBasicParsing -ErrorAction Stop
             if ($check.StatusCode -eq 200) { $found = $true; break }
         } catch {}
         Write-Host "." -NoNewline -ForegroundColor DarkCyan
@@ -227,10 +229,9 @@ function RunReplay {
 
     if ($found) {
         PrintOk "Report ready! Opening in browser..."
-        # ADD THE /$replayId HERE TOO
-        Start-Process "$ENGINE_API/report/$replayId"
+        Start-Process $reportUrl
     } else {
-        PrintWarn "Timed out. Open manually: $ENGINE_API/report/$replayId"
+        PrintWarn "Timed out. Open manually: $reportUrl"
     }
 }
 
