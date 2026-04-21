@@ -3,514 +3,638 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>DLTRF Mission Control</title>
+  <title>DLTRF · Mission Control</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- DM Sans + DM Mono: clean without being generic Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
+    /* ─────────────────────────────────────────────
+       DESIGN TOKENS
+       • Warm neutral palette (stone scale) — not blue-gray
+       • Single blue accent — used sparingly
+       • Strict 4px base → 8px grid
+       ───────────────────────────────────────────── */
     :root {
-      --bg:          #d3d3d3;
-      --surface:     #ffffff;
-      --surface2:    #f0f4ff;
-      --border:      #e4e9f2;
-      --border-soft: #edf0f7;
-      --blue:        #3b6ef8;
-      --blue-light:  #eef2ff;
-      --blue-mid:    #c7d4fd;
-      --emerald:     #10b981;
-      --emerald-lt:  #ecfdf5;
-      --amber:       #f59e0b;
-      --amber-lt:    #fffbeb;
-      --red:         #ef4444;
-      --red-lt:      #fef2f2;
-      --text:        #1a2236;
-      --text-mid:    #4b5a72;
-      --text-soft:   #8a96a8;
-      --mono:        'JetBrains Mono', monospace;
-      --display:     'Syne', sans-serif;
-      --body:        'DM Sans', sans-serif;
-      --radius:      16px;
-      --shadow-sm:   0 1px 3px rgba(30,50,90,0.07), 0 1px 2px rgba(30,50,90,0.04);
-      --shadow:      0 4px 16px rgba(30,50,90,0.08), 0 1px 4px rgba(30,50,90,0.05);
-      --shadow-lg:   0 12px 40px rgba(30,50,90,0.12), 0 4px 12px rgba(30,50,90,0.06);
+      /* Surfaces */
+      --bg:            #d3d3d3;
+      --surface:       #ffffff;
+      --surface-hover: #fafaf9;
+      --surface-sunken:#f0efed;
+
+      /* Borders — three levels */
+      --border-strong: #d6d3d1;
+      --border:        #e7e5e2;
+      --border-subtle: #f0eeec;
+
+      /* Type hierarchy */
+      --text:   #1c1917;
+      --text-2: #44403c;
+      --text-3: #78716c;
+      --text-4: #a8a29e;
+
+      /* Accent — one color, used deliberately */
+      --accent:        #2563eb;
+      --accent-hover:  #1d4ed8;
+      --accent-subtle: #eff6ff;
+      --accent-muted:  #bfdbfe;
+
+      /* Semantic */
+      --green:         #16a34a;
+      --green-bg:      #f0fdf4;
+      --green-border:  #bbf7d0;
+      --red:           #dc2626;
+      --red-bg:        #fef2f2;
+      --red-border:    #fecaca;
+      --amber:         #b45309;
+      --amber-bg:      #fffbeb;
+      --amber-border:  #fde68a;
+
+      /* Typography */
+      --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'DM Mono', 'Menlo', 'Courier New', monospace;
+
+      /* Radii */
+      --r-sm: 4px;
+      --r-md: 8px;
+      --r-lg: 10px;
+      --r-xl: 12px;
+
+      /* Shadows — one source of truth */
+      --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
-      min-height: 100%;
+    html { scrollbar-gutter: stable; }
+
+    body {
+      min-height: 100dvh;
       background: var(--bg);
       color: var(--text);
-      font-family: var(--body);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
-    body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: 0;
-      background-image:
-        radial-gradient(circle at 20% 10%, #dce8ff55 0%, transparent 40%),
-        radial-gradient(circle at 80% 90%, #d1fae533 0%, transparent 40%);
-      pointer-events: none;
-    }
-
+    /* ─────────────────────────────────────────────
+       LAYOUT — max-width keeps it readable
+       ───────────────────────────────────────────── */
     .shell {
-      position: relative; z-index: 1;
-      max-width: 800px;
+      max-width: 600px;
       margin: 0 auto;
       min-height: 100dvh;
-      padding-bottom: 48px;
       display: flex;
       flex-direction: column;
-      gap: 0;
     }
 
+    /* ─────────────────────────────────────────────
+       HEADER — 48px, sticky, subtle blur
+       ───────────────────────────────────────────── */
     header {
-      padding: 28px 24px 20px;
+      height: 48px;
+      padding: 0 20px;
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      position: sticky; top: 0; z-index: 10;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      background: rgba(244,246,249,0.85);
-      border-bottom: 1px solid var(--border-soft);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(245,245,244,0.92);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
     }
 
-    .brand { display: flex; flex-direction: column; gap: 2px; }
-
-    .brand-title {
-      font-family: var(--display);
-      font-size: 24px;
-      font-weight: 800;
-      color: var(--text);
-      letter-spacing: -0.3px;
-      line-height: 1;
-    }
-    .brand-title .accent { color: var(--blue); }
-
-    .brand-sub {
-      font-family: var(--mono);
-      font-size: 10px;
+    /* Wordmark — monospace, compact */
+    .wordmark {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 13px;
       font-weight: 500;
-      color: var(--text-soft);
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-top: 4px;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+    .wordmark-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-4);
+      letter-spacing: 0;
     }
 
+    /* ─────────────────────────────────────────────
+       STATUS CHIP — pill, three states
+       Color only on text + dot, not full fill
+       ───────────────────────────────────────────── */
     .status-chip {
-      display: flex; align-items: center; gap: 7px;
-      background: var(--surface);
-      border: 1.5px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px 4px 8px;
       border-radius: 100px;
-      padding: 7px 14px 7px 10px;
-      font-family: var(--mono);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      font-family: var(--font-mono);
       font-size: 11px;
       font-weight: 500;
-      color: var(--text-mid);
-      box-shadow: var(--shadow-sm);
-      transition: border-color 0.4s, color 0.4s;
+      color: var(--text-3);
+      box-shadow: var(--shadow-xs);
+      transition: border-color 0.25s, color 0.25s, background 0.25s;
     }
-    .status-chip.online  { border-color: #a7f3d0; color: var(--emerald); background: var(--emerald-lt); }
-    .status-chip.offline { border-color: #fecaca; color: var(--red);     background: var(--red-lt); }
+    .status-chip.online  { border-color: var(--green-border);  color: var(--green); background: var(--green-bg); }
+    .status-chip.offline { border-color: var(--red-border);    color: var(--red);   background: var(--red-bg); }
 
     .status-dot {
-      width: 8px; height: 8px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: var(--text-soft);
-      transition: background 0.4s, box-shadow 0.4s;
+      background: currentColor;
       flex-shrink: 0;
     }
-    .status-chip.online  .status-dot { background: var(--emerald); box-shadow: 0 0 0 3px #a7f3d066; }
-    .status-chip.offline .status-dot { background: var(--red);     box-shadow: 0 0 0 3px #fca5a566; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
-    .status-chip.online .status-dot { animation: pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .status-chip.online .status-dot { animation: pulse 2s ease-in-out infinite; }
 
-    .content { padding: 20px 20px 0; display: flex; flex-direction: column; gap: 16px; }
+    /* ─────────────────────────────────────────────
+       CONTENT AREA
+       ───────────────────────────────────────────── */
+    .content {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      flex: 1;
+    }
 
+    /* ─────────────────────────────────────────────
+       SECTION LABEL — replaces heavy card headers
+       ───────────────────────────────────────────── */
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-4);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      padding: 0 2px;
+    }
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ─────────────────────────────────────────────
+       CARD — flat, single border, no stacked shadows
+       ───────────────────────────────────────────── */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
+      border-radius: var(--r-xl);
+      box-shadow: var(--shadow-sm);
       overflow: hidden;
-      animation: slideUp 0.5s cubic-bezier(.22,.68,0,1.2) both;
     }
-    .card:nth-child(1) { animation-delay: 0.05s; }
-    .card:nth-child(2) { animation-delay: 0.10s; }
-    .card:nth-child(3) { animation-delay: 0.15s; }
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(16px); }
+    .card-body { padding: 14px 16px 16px; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
       to   { opacity: 1; transform: translateY(0); }
     }
+    .card { animation: fadeUp 0.28s ease both; }
+    .card:nth-child(1) { animation-delay: 0.04s; }
+    .card:nth-child(2) { animation-delay: 0.08s; }
+    .card:nth-child(3) { animation-delay: 0.12s; }
 
-    .card-header {
-      padding: 16px 20px 12px;
-      border-bottom: 1px solid var(--border-soft);
-      display: flex; align-items: center; gap: 10px;
-    }
-    .card-icon {
-      width: 32px; height: 32px;
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px;
-      flex-shrink: 0;
-    }
-    .card-icon.blue    { background: var(--blue-light); }
-    .card-icon.emerald { background: var(--emerald-lt); }
-    .card-icon.amber   { background: var(--amber-lt); }
-
-    .card-title {
-      font-family: var(--display);
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--text);
-      letter-spacing: 0.1px;
-    }
-    .card-body { padding: 16px 20px; }
-
+    /* ─────────────────────────────────────────────
+       QUICK ACCESS TILES
+       Horizontal layout — icon left, text right, arrow hint
+       ───────────────────────────────────────────── */
     .link-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
+      gap: 8px;
+      padding: 10px;
     }
+
     .link-tile {
-      display: flex; flex-direction: column; gap: 4px;
-      padding: 14px 16px;
-      background: var(--bg);
-      border: 1.5px solid var(--border);
-      border-radius: 12px;
-      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--surface-sunken);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
       text-decoration: none;
       color: inherit;
-      transition: border-color 0.18s, background 0.18s, box-shadow 0.18s, transform 0.12s;
+      cursor: pointer;
+      transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
       -webkit-tap-highlight-color: transparent;
+      min-width: 0;
     }
-    .link-tile:hover  { border-color: var(--blue-mid); background: var(--blue-light); box-shadow: var(--shadow-sm); }
-    .link-tile:active { transform: scale(0.97); }
+    .link-tile:hover {
+      border-color: var(--border-strong);
+      background: var(--surface);
+      box-shadow: var(--shadow-xs);
+    }
+    .link-tile:active { opacity: 0.72; }
 
-    .tile-emoji { font-size: 18px; line-height: 1; margin-bottom: 4px; }
-    .tile-name  {
-      font-family: var(--display);
+    .tile-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 13px;
-      font-weight: 700;
+      flex-shrink: 0;
+      box-shadow: var(--shadow-xs);
+    }
+
+    .tile-body { min-width: 0; flex: 1; }
+    .tile-name {
+      font-size: 13px;
+      font-weight: 600;
       color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
     }
     .tile-desc {
-      font-family: var(--mono);
-      font-size: 9px;
-      color: var(--text-soft);
-      letter-spacing: 0.5px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-4);
+      margin-top: 1px;
     }
 
+    /* Arrow — only visible on hover */
+    .tile-arrow {
+      margin-left: auto;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--text-4);
+      opacity: 0;
+      transform: translateX(-3px);
+      transition: opacity 0.14s, transform 0.14s;
+    }
+    .link-tile:hover .tile-arrow { opacity: 1; transform: translateX(0); }
+
+    /* ─────────────────────────────────────────────
+       FORM ELEMENTS — 36px height, consistent look
+       ───────────────────────────────────────────── */
     .field-label {
       display: block;
-      font-family: var(--mono);
+      font-family: var(--font-mono);
       font-size: 10px;
       font-weight: 500;
-      color: var(--text-soft);
-      letter-spacing: 1.5px;
+      color: var(--text-3);
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
+
+    .field-row { display: flex; gap: 8px; align-items: flex-end; }
+    .field-row .styled-select { flex: 1; }
 
     .styled-select {
       width: 100%;
+      height: 36px;
       appearance: none;
-      background: var(--bg);
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-lg);
       color: var(--text);
-      font-family: var(--body);
-      font-size: 14px;
-      font-weight: 500;
-      padding: 11px 40px 11px 14px;
-      cursor: pointer;
-      outline: none;
-      transition: border-color 0.18s, box-shadow 0.18s;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238a96a8' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-    }
-    .styled-select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #3b6ef820; }
-
-    .field-row { display: flex; gap: 10px; align-items: flex-end; }
-    .field-row .styled-select { flex: 1; }
-
-    .btn {
-      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-      padding: 11px 20px;
-      border-radius: 10px;
-      border: none;
-      font-family: var(--display);
+      font-family: var(--font-sans);
       font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
+      font-weight: 500;
+      padding: 0 32px 0 12px;
       cursor: pointer;
       outline: none;
-      transition: all 0.18s;
-      -webkit-tap-highlight-color: transparent;
+      transition: border-color 0.14s, box-shadow 0.14s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a8a29e' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      box-shadow: var(--shadow-xs);
+    }
+    .styled-select:hover  { border-color: var(--border-strong); }
+    .styled-select:focus  {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+      outline: none;
+    }
+
+    /* ─────────────────────────────────────────────
+       BUTTONS — locked 36px height
+       ───────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 36px;
+      padding: 0 14px;
+      border-radius: var(--r-lg);
+      border: 1px solid transparent;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
       white-space: nowrap;
       flex-shrink: 0;
-    }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
-
-    .btn-primary {
-      background: var(--blue);
-      color: #fff;
-      box-shadow: 0 2px 8px #3b6ef830;
-    }
-    .btn-primary:not(:disabled):hover  { background: #2c5de8; box-shadow: 0 4px 16px #3b6ef840; }
-    .btn-primary:not(:disabled):active { transform: scale(0.97); }
-
-    .btn-warning {
-      background: var(--amber-lt);
-      color: #92400e;
-      border: 1.5px solid #fcd34d;
-    }
-    .btn-warning:not(:disabled):hover  { background: #fef3c7; }
-    .btn-warning:not(:disabled):active { transform: scale(0.97); }
-
-    .replay-hero {
-      padding: 28px 20px;
-      display: flex; flex-direction: column; align-items: center; gap: 20px;
-    }
-
-    .replay-btn-wrap {
-      position: relative;
-      width: 180px; height: 180px;
-    }
-
-    .ring {
-      position: absolute;
-      border-radius: 50%;
-      border: 1.5px solid var(--blue-mid);
-      animation: expand 3s ease-in-out infinite;
-      pointer-events: none;
-    }
-    .ring:nth-child(1) { inset: -14px; opacity: 0.5; animation-delay: 0s; }
-    .ring:nth-child(2) { inset: -28px; opacity: 0.25; animation-delay: 0.6s; }
-    .ring:nth-child(3) { inset: -42px; opacity: 0.12; animation-delay: 1.2s; }
-    @keyframes expand {
-      0%,100% { transform: scale(1); }
-      50%      { transform: scale(1.04); }
-    }
-
-    #replayBtn {
-      position: absolute; inset: 0;
-      border-radius: 50%;
-      background: linear-gradient(145deg, #ffffff 0%, #f0f5ff 100%);
-      border: 2.5px solid var(--blue-mid);
-      color: var(--text);
-      cursor: pointer;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 5px;
-      font-family: var(--display);
-      font-weight: 800;
-      outline: none;
+      transition: background 0.14s, border-color 0.14s, box-shadow 0.14s, opacity 0.14s;
       -webkit-tap-highlight-color: transparent;
-      transition: all 0.2s;
-      box-shadow: var(--shadow-lg), 0 0 0 0 #3b6ef820;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* Danger variant for Reset Logs */
+    .btn-danger {
+      background: var(--surface);
+      color: var(--amber);
+      border-color: var(--amber-border);
+      box-shadow: var(--shadow-xs);
+    }
+    .btn-danger:not(:disabled):hover  { background: var(--amber-bg); }
+    .btn-danger:not(:disabled):active { opacity: 0.75; }
+
+    /* ─────────────────────────────────────────────
+       REPLAY SECTION
+       Removed circular button + rings — they were
+       decorative noise. Flat primary CTA instead.
+       ───────────────────────────────────────────── */
+    .replay-body {
+      padding: 14px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .replay-controls {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .replay-controls .timeframe-field { flex: 1; }
+
+    /* Primary CTA — solid blue, intentional */
+    #replayBtn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      height: 36px;
+      padding: 0 18px;
+      border-radius: var(--r-lg);
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background 0.14s, box-shadow 0.14s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      /* Subtle inset ring so it reads well on white backgrounds */
+      box-shadow: 0 1px 2px rgba(37,99,235,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
     }
     #replayBtn:not(:disabled):hover {
-      border-color: var(--blue);
-      box-shadow: var(--shadow-lg), 0 0 0 8px #3b6ef814;
-      background: linear-gradient(145deg, #ffffff 0%, #e8eeff 100%);
+      background: var(--accent-hover);
+      box-shadow: 0 2px 8px rgba(37,99,235,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
     }
-    #replayBtn:not(:disabled):active { transform: scale(0.96); }
+    #replayBtn:not(:disabled):active { transform: scale(0.98); }
     #replayBtn:disabled {
-      border-color: var(--border);
-      box-shadow: var(--shadow-sm);
+      background: var(--text-4);
+      box-shadow: none;
       cursor: not-allowed;
     }
 
-    .btn-emoji { font-size: 40px; line-height: 1; }
-    .btn-text  {
-      font-size: 11px;
-      letter-spacing: 2.5px;
-      text-transform: uppercase;
-      color: var(--blue);
-    }
-
-    .spin {
-      width: 40px; height: 40px;
-      border: 3px solid var(--blue-mid);
-      border-top-color: var(--blue);
+    /* Spinner inside button — no layout shift */
+    .btn-spinner {
+      width: 13px;
+      height: 13px;
+      border: 1.5px solid rgba(255,255,255,0.35);
+      border-top-color: #fff;
       border-radius: 50%;
-      animation: spin 0.7s linear infinite;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .timeframe-field {
-      width: 100%;
-      max-width: 280px;
-    }
-
+    /* ─────────────────────────────────────────────
+       LOG OUTPUT — terminal-feel, sunken surface
+       ───────────────────────────────────────────── */
     #replayLog {
       display: none;
-      width: 100%;
-      background: var(--surface2);
+      background: var(--surface-sunken);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 14px;
-      font-family: var(--mono);
+      border-radius: var(--r-lg);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
       font-size: 11px;
-      line-height: 1.8;
-      max-height: 160px;
+      line-height: 1.75;
+      max-height: 144px;
       overflow-y: auto;
     }
     #replayLog.active { display: block; }
-    .log-row { display: flex; gap: 8px; }
-    .log-ts  { color: var(--blue); flex-shrink: 0; }
-    .log-msg { color: var(--text-mid); }
-    .log-msg.ok   { color: var(--emerald); }
+
+    #replayLog::-webkit-scrollbar { width: 4px; }
+    #replayLog::-webkit-scrollbar-track { background: transparent; }
+    #replayLog::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+
+    .log-row { display: flex; gap: 10px; align-items: flex-start; }
+    .log-ts   { color: var(--text-4); flex-shrink: 0; user-select: none; }
+    .log-msg  { color: var(--text-2); }
+    .log-msg.ok   { color: var(--green); }
     .log-msg.warn { color: var(--amber); }
     .log-msg.fail { color: var(--red); }
 
+    /* ─────────────────────────────────────────────
+       TOAST — dark pill, bottom-center
+       ───────────────────────────────────────────── */
     #toast {
-      position: fixed; bottom: 28px; left: 50%;
-      transform: translateX(-50%) translateY(70px);
-      background: var(--surface);
-      border: 1.5px solid var(--border);
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--text);
+      color: #fff;
       border-radius: 100px;
-      padding: 11px 24px;
-      font-family: var(--body);
+      padding: 8px 16px;
+      font-family: var(--font-sans);
       font-size: 13px;
       font-weight: 500;
       white-space: nowrap;
       z-index: 9999;
-      box-shadow: var(--shadow-lg);
-      transition: transform 0.38s cubic-bezier(.34,1.56,.64,1), opacity 0.35s;
+      box-shadow: var(--shadow-md);
+      transition: transform 0.18s ease, opacity 0.18s ease;
       opacity: 0;
       pointer-events: none;
-      color: var(--text-mid);
     }
-    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-    #toast.success { border-color: #a7f3d0; color: var(--emerald); }
-    #toast.error   { border-color: #fca5a5; color: var(--red); }
+    #toast.show    { transform: translateX(-50%) translateY(0); opacity: 1; }
+    #toast.success { background: #14532d; }
+    #toast.error   { background: #7f1d1d; }
 
+    /* ─────────────────────────────────────────────
+       FOOTER
+       ───────────────────────────────────────────── */
     footer {
-      margin-top: 8px;
-      padding: 20px 24px;
+      padding: 14px 20px;
       text-align: center;
-      font-family: var(--mono);
+      font-family: var(--font-mono);
       font-size: 10px;
-      color: var(--text-soft);
-      letter-spacing: 2px;
+      color: var(--text-4);
+      letter-spacing: 0.08em;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    /* ─────────────────────────────────────────────
+       MOBILE — tighten spacing
+       ───────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      .content { padding: 12px; gap: 14px; }
+      .link-grid { padding: 8px; gap: 6px; }
+      .link-tile { padding: 10px; }
+      /* Stack replay controls vertically on small screens */
+      .replay-controls { flex-direction: column; align-items: stretch; }
+      #replayBtn { width: 100%; }
     }
   </style>
 </head>
 <body>
 <div class="shell">
 
-  <!-- ── Header ── -->
+  <!-- ─────────────────────────────────────
+       HEADER
+       Wordmark left · Status right
+       ───────────────────────────────────── -->
   <header>
-    <div class="brand">
-      <!-- FIX 3: Cleaned title — no "v1 AZURE" or "Mission Control" -->
-      <div class="brand-title">DLTRF</div>
+    <div class="wordmark">
+      DLTRF
+      <span class="wordmark-badge">v1</span>
     </div>
     <div class="status-chip" id="statusChip">
-      <div class="status-dot" id="statusDot"></div>
+      <div class="status-dot"></div>
       <span id="statusLabel">CHECKING</span>
     </div>
   </header>
 
   <div class="content">
 
-    <!-- ── Quick Access ── -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-icon blue">🔗</div>
-        <div class="card-title">Quick Access</div>
-      </div>
-      <div class="card-body">
+    <!-- ─────────────────────────────────────
+         QUICK ACCESS
+         ───────────────────────────────────── -->
+    <div>
+      <div class="section-label">Quick Access</div>
+      <div class="card">
         <div class="link-grid">
-          <!-- FIX 1a: Correct id="webappLink" -->
           <a class="link-tile" id="webappLink" target="_blank" rel="noopener">
-            <div class="tile-emoji">🌐</div>
-            <div class="tile-name">Web App</div>
-            <div class="tile-desc">Target Application</div>
+            <div class="tile-icon">🌐</div>
+            <div class="tile-body">
+              <div class="tile-name">Web App</div>
+              <div class="tile-desc">port :80</div>
+            </div>
+            <span class="tile-arrow">↗</span>
           </a>
-          <!-- FIX 1b: Correct id="logDashLink" -->
           <a class="link-tile" id="logDashLink" target="_blank" rel="noopener">
-            <div class="tile-emoji">📊</div>
-            <div class="tile-name">Log Dashboard</div>
-            <div class="tile-desc">Live Log Stream</div>
+            <div class="tile-icon">📊</div>
+            <div class="tile-body">
+              <div class="tile-name">Log Dashboard</div>
+              <div class="tile-desc">port :5000</div>
+            </div>
+            <span class="tile-arrow">↗</span>
           </a>
         </div>
       </div>
     </div>
 
-    <!-- ── Reset Logs ── -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-icon amber">🗑️</div>
-        <div class="card-title">Reset Redis Logs</div>
-      </div>
-      <div class="card-body">
-        <label class="field-label" for="resetSelect">Delete logs older than</label>
-        <div class="field-row">
-          <select class="styled-select" id="resetSelect">
-            <option value="15m">Last 15 minutes</option>
-            <option value="1h" selected>Last 1 hour</option>
-            <option value="4h">Last 4 hours</option>
-            <option value="24h">Last 24 hours</option>
-            <option value="all">⚠️  ALL logs</option>
-          </select>
-          <button class="btn btn-warning" id="resetBtn" onclick="resetLogs()">Reset</button>
+    <!-- ─────────────────────────────────────
+         RESET LOGS
+         Amber button signals destructive action
+         without full red urgency
+         ───────────────────────────────────── -->
+    <div>
+      <div class="section-label">Reset Logs</div>
+      <div class="card">
+        <div class="card-body">
+          <label class="field-label" for="resetSelect">Delete entries older than</label>
+          <div class="field-row">
+            <select class="styled-select" id="resetSelect">
+              <option value="15m">15 minutes</option>
+              <option value="1h" selected>1 hour</option>
+              <option value="4h">4 hours</option>
+              <option value="24h">24 hours</option>
+              <option value="all">⚠ All logs</option>
+            </select>
+            <button class="btn btn-danger" id="resetBtn" onclick="resetLogs()">
+              Reset
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- ── Replay Engine ── -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-icon emerald">🔁</div>
-        <div class="card-title">Replay Engine</div>
-      </div>
-      <div class="replay-hero">
+    <!-- ─────────────────────────────────────
+         REPLAY ENGINE
+         Timeframe + CTA inline, log below
+         ───────────────────────────────────── -->
+    <div>
+      <div class="section-label">Replay Engine</div>
+      <div class="card">
+        <div class="replay-body">
+          <div class="replay-controls">
+            <div class="timeframe-field">
+              <label class="field-label" for="replayTimeframe">Timeframe</label>
+              <select class="styled-select" id="replayTimeframe">
+                <option value="15m">15 minutes</option>
+                <option value="1h" selected>1 hour</option>
+                <option value="4h">4 hours</option>
+                <option value="24h">24 hours</option>
+                <option value="all">All logs</option>
+              </select>
+            </div>
+            <button id="replayBtn" onclick="startReplay()">
+              <span id="replayIcon">▶</span>
+              <span id="replayLabel">Start Replay</span>
+            </button>
+          </div>
 
-        <div class="timeframe-field">
-          <label class="field-label" for="replayTimeframe">Replay Timeframe</label>
-          <select class="styled-select" id="replayTimeframe">
-            <option value="15m">Last 15 minutes</option>
-            <option value="1h" selected>Last 1 hour</option>
-            <option value="4h">Last 4 hours</option>
-            <option value="24h">Last 24 hours</option>
-            <option value="all">All logs</option>
-          </select>
+          <!-- Terminal log — hidden until replay fires -->
+          <div id="replayLog"></div>
         </div>
-
-        <div class="replay-btn-wrap">
-          <div class="ring"></div>
-          <div class="ring"></div>
-          <div class="ring"></div>
-          <button id="replayBtn" onclick="startReplay()">
-            <div id="replayIcon" class="btn-emoji">🚀</div>
-            <div id="replayLabel" class="btn-text">Start Replay</div>
-          </button>
-        </div>
-
-        <div id="replayLog"></div>
       </div>
     </div>
 
   </div><!-- /content -->
 
-  <!-- FIX 3: Cleaned footer -->
-  <footer>DLTRF</footer>
+  <footer>DLTRF · MISSION CONTROL</footer>
 </div>
 
 <div id="toast"></div>
 
 <script>
+  /* ── Config ─────────────────────────────────────────────────────── */
   const TOKEN   = 'mysecret';
   const HEADERS = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 
-  let pollingTimer = null;
+  let pollingTimer   = null;
   let pollingElapsed = 0;
 
-  function toast(msg, type = 'success', ms = 3500) {
+  /* ── Toast ──────────────────────────────────────────────────────── */
+  function toast(msg, type = 'success', ms = 3200) {
     const el = document.getElementById('toast');
     el.textContent = msg;
     el.className = `show ${type}`;
@@ -518,40 +642,43 @@
     el._t = setTimeout(() => { el.className = ''; }, ms);
   }
 
+  /* ── Health check ───────────────────────────────────────────────── */
   async function checkHealth() {
     const chip  = document.getElementById('statusChip');
     const label = document.getElementById('statusLabel');
     try {
       const r = await fetch('/health', { signal: AbortSignal.timeout(5000) });
       if (r.ok) {
-        chip.className  = 'status-chip online';
+        chip.className    = 'status-chip online';
         label.textContent = 'ONLINE';
         return;
       }
     } catch (_) {}
-    chip.className  = 'status-chip offline';
+    chip.className    = 'status-chip offline';
     label.textContent = 'OFFLINE';
   }
   checkHealth();
   setInterval(checkHealth, 10_000);
 
+  /* ── Append a line to the replay log ───────────────────────────── */
   function logLine(text, cls = '') {
     const box = document.getElementById('replayLog');
     box.classList.add('active');
-    const ts   = new Date().toLocaleTimeString('en-US', { hour12: false });
-    const row  = document.createElement('div');
+    const ts  = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const row = document.createElement('div');
     row.className = 'log-row';
-    row.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-msg ${cls}">${text}</span>`;
+    row.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg ${cls}">${text}</span>`;
     box.appendChild(row);
     box.scrollTop = box.scrollHeight;
   }
 
+  /* ── Reset Logs ─────────────────────────────────────────────────── */
   async function resetLogs() {
     const btn       = document.getElementById('resetBtn');
     const timeframe = document.getElementById('resetSelect').value;
 
     if (timeframe === 'all') {
-      if (!confirm('⚠️ This will permanently delete ALL logs.\nAre you sure?')) return;
+      if (!confirm('This will permanently delete ALL logs. Continue?')) return;
     }
 
     btn.disabled    = true;
@@ -566,20 +693,21 @@
       });
       if (r.ok) {
         const d = await r.json();
-        const n = d.entries_removed != null ? ` · ${d.entries_removed} entries removed` : '';
-        toast(`✓ Logs cleared${n}`, 'success');
+        const n = d.entries_removed != null ? ` — ${d.entries_removed} entries` : '';
+        toast(`Logs cleared${n}`, 'success');
       } else {
         const e = await r.json().catch(() => ({ detail: 'Unknown error' }));
-        toast(`✗ ${e.detail || r.statusText}`, 'error');
+        toast(e.detail || r.statusText, 'error');
       }
     } catch (e) {
-      toast(`✗ Network: ${e.message}`, 'error');
+      toast(`Network error: ${e.message}`, 'error');
     } finally {
       btn.disabled    = false;
       btn.textContent = 'Reset';
     }
   }
 
+  /* ── Start Replay ───────────────────────────────────────────────── */
   async function startReplay() {
     const btn       = document.getElementById('replayBtn');
     const icon      = document.getElementById('replayIcon');
@@ -587,11 +715,12 @@
     const timeframe = document.getElementById('replayTimeframe').value;
 
     btn.disabled = true;
-    icon.innerHTML  = '<div class="spin"></div>';
+    /* Replace text icon with spinner — no layout shift */
+    icon.outerHTML    = `<span id="replayIcon" class="btn-spinner"></span>`;
     label.textContent = 'Starting…';
 
     document.getElementById('replayLog').innerHTML = '';
-    logLine('Initiating replay request…');
+    logLine('Initiating replay…');
 
     let replayId;
     try {
@@ -614,17 +743,18 @@
 
       const data = await r.json();
       replayId = data.replay_id;
-      logLine(`Replay queued · ID: ${replayId}`, 'ok');
-      logLine(`Timeframe: ${timeframe} · Waiting for report…`);
+      logLine(`Queued · ${replayId}`, 'ok');
+      logLine(`Timeframe: ${timeframe} — waiting for report…`);
       label.textContent = 'Running…';
 
     } catch (e) {
-      logLine(`Failed to start: ${e.message}`, 'fail');
-      toast(`✗ ${e.message}`, 'error');
+      logLine(`Failed: ${e.message}`, 'fail');
+      toast(e.message, 'error');
       resetReplayBtn();
       return;
     }
 
+    /* Poll every 3s for the HTML report */
     pollingElapsed = 0;
     clearInterval(pollingTimer);
     pollingTimer = setInterval(async () => {
@@ -633,42 +763,43 @@
 
       if (pollingElapsed > 300) {
         clearInterval(pollingTimer);
-        logLine('Timed out after 5 min. Open report manually.', 'warn');
+        logLine('Timed out after 5 min.', 'warn');
         logLine(`→ ${reportUrl}`, 'warn');
-        toast('⏱ Timed out. Check manually.', 'error', 6000);
+        toast('Timed out — check report manually', 'error', 6000);
         resetReplayBtn();
         return;
       }
 
       try {
-        const head = await fetch(reportUrl, {
-          method: 'HEAD',
-          signal: AbortSignal.timeout(4000),
-        });
+        const head = await fetch(reportUrl, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
         if (head.ok) {
           clearInterval(pollingTimer);
-          logLine(`Report ready! (${pollingElapsed}s elapsed)`, 'ok');
-          logLine('Redirecting to report…', 'ok');
-          toast('✓ Report ready! Opening…', 'success');
-          setTimeout(() => { window.location.href = reportUrl; }, 900);
+          logLine(`Report ready (${pollingElapsed}s elapsed)`, 'ok');
+          toast('Report ready — opening…', 'success');
+          setTimeout(() => { window.location.href = reportUrl; }, 800);
         }
-      } catch (_) { /* not ready yet */ }
+      } catch (_) { /* not ready yet, keep polling */ }
 
       label.textContent = `${pollingElapsed}s…`;
     }, 3000);
   }
 
+  /* ── Reset replay button to idle state ─────────────────────────── */
   function resetReplayBtn() {
     const btn   = document.getElementById('replayBtn');
-    const icon  = document.getElementById('replayIcon');
     const label = document.getElementById('replayLabel');
-    btn.disabled     = false;
-    icon.className   = 'btn-emoji';
-    icon.textContent = '🚀';
+    btn.disabled = false;
+    const spinner = document.getElementById('replayIcon');
+    if (spinner) {
+      const newIcon = document.createElement('span');
+      newIcon.id          = 'replayIcon';
+      newIcon.textContent = '▶';
+      spinner.replaceWith(newIcon);
+    }
     label.textContent = 'Start Replay';
   }
 
-  // FIX 2: URL assignment moved outside resetReplayBtn(), runs on page load
+  /* ── Set quick-access hrefs from current hostname ───────────────── */
   document.getElementById('webappLink').href  = `http://${window.location.hostname}`;
   document.getElementById('logDashLink').href = `http://${window.location.hostname}:5000`;
 </script>
