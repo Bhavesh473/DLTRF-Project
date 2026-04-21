@@ -217,7 +217,8 @@ function RunReplay {
         Start-Sleep -Seconds 3
         $elapsed += 3
         try {
-            $check = Invoke-WebRequest -Uri "$ENGINE_API/report" -UseBasicParsing -ErrorAction Stop
+            # ADD THE /$replayId HERE
+            $check = Invoke-WebRequest -Uri "$ENGINE_API/report/$replayId" -UseBasicParsing -ErrorAction Stop
             if ($check.StatusCode -eq 200) { $found = $true; break }
         } catch {}
         Write-Host "." -NoNewline -ForegroundColor DarkCyan
@@ -226,9 +227,10 @@ function RunReplay {
 
     if ($found) {
         PrintOk "Report ready! Opening in browser..."
-        Start-Process "$ENGINE_API/report"
+        # ADD THE /$replayId HERE TOO
+        Start-Process "$ENGINE_API/report/$replayId"
     } else {
-        PrintWarn "Timed out. Open manually: $ENGINE_API/report"
+        PrintWarn "Timed out. Open manually: $ENGINE_API/report/$replayId"
     }
 }
 

@@ -14,8 +14,8 @@ import yaml
 import redis.asyncio as redis
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.security import HTTPBearer
+from fastapi.staticfiles import StaticFiles  # <-- Added Import
 from pydantic import BaseModel
-
 from ..replay.deterministic_replayer import DeterministicReplayer
 from ..replay.session_manager import SessionManager
 from ..replay.checkpoint_store import CheckpointStore
@@ -24,7 +24,10 @@ from ..common.metrics import get_metrics
 from ..common.logging_config import ReplayLogger
 
 logger = ReplayLogger(__name__)
+
 app = FastAPI(title="DLTRF Replay Engine")
+app.mount("/report", StaticFiles(directory="reports"), name="reports") # <-- Added Mount
+
 security = HTTPBearer()
 
 # ─────────────────────────────────────────────────────────────────────────────
