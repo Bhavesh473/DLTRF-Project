@@ -1,0 +1,145 @@
+---
+# =============================================================================
+#  DLTRF - Ansible Deployment Playbook
+#  File: ansible/deploy.yml
+# =============================================================================
+#
+#  Mirrors the full logic of dltrf-cloud.ps1, covering:
+#    1. Prerequisites  — Ensure Docker & Docker Compose are installed
+#    2. Code Sync      — Pull latest code from main branch
+#    3. Hook Deploy    — Build & start universal-logging-hook
+#    4. Engine Deploy  — Build & start REPLAY-ENGINE
+#    5. Cleanup        — Prune unused Docker images
+#
+#  Run from WSL:
+#    ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
+# =============================================================================
+
+- name: Deploy DLTRF to Azure VM
+  hosts: dltrf_servers
+  become: true   # Run tasks as sudo/root where needed
+
+  # ---------------------------------------------------------------------------
+  #  Variables — single place to update paths/settings
+  # ---------------------------------------------------------------------------
+  vars:
+    project_root:   "/home/azureuser/dltrf-project"
+    hook_dir:       "/home/azureuser/dltrf-project/universal-logging-hook"
+    engine_dir:     "/home/azureuser/dltrf-project/REPLAY-ENGINE"
+    git_branch:     "main"
+
+  # ---------------------------------------------------------------------------
+  #  PHASE 1: Prerequisites — Docker & Docker Compose
+  # ---------------------------------------------------------------------------
+  tasks:
+
+    - name: "[1/7] Update apt package index"
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600   # Skip update if cache is less than 1 hour old
+
+    - name: "[1/7] Install Docker and dependencies"
+      apt:
+        name:
+          - docker.io
+          - docker-compose-plugin   # Provides the 'docker compose' (v2) sub-command
+          - git
+          - curl
+        state: present
+
+    - name: "[1/7] Ensure Docker service is started and enabled on boot"
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: "[1/7] Add azureuser to the docker group (avoids needing sudo for docker)"
+      user:
+        name: azureuser
+        groups: docker
+        append: yes
+
+    # -------------------------------------------------------------------------
+    #  PHASE 2: Code Sync — Git Pull
+    # -------------------------------------------------------------------------
+
+    - name: "[2/7] Pull latest code from '{{ git_branch }}' branch"
+      git:
+        repo:    "{{ project_root }}"   # Uses the already-cloned repo path
+        dest:    "{{ project_root }}"
+        version: "{{ git_branch }}"
+        update:  yes                    # This is what triggers 'git pull'
+        force:   yes                    # Discard any local uncommitted changes
+      become: false                     # Run as azureuser, not root (git credentials)
+
+    # -------------------------------------------------------------------------
+    #  PHASE 3: Deploy Hook Environment (Nginx, Juice Shop, Redis, Fluentd)
+    # -------------------------------------------------------------------------
+
+    - name: "[3/7] Build Hook Microservice images"
+      community.docker.docker_compose_v2:
+        project_src: "{{ hook_dir }}"
+        build:        always           # Always rebuild to pick up code changes
+        state:        present
+      register: hook_build_output
+
+    - name: "[4/7] Start Hook Microservice containers (docker compose up -d)"
+      community.docker.docker_compose_v2:
+        project_src: "{{ hook_dir }}"
+        state:        present          # Equivalent to 'docker compose up -d'
+      register: hook_up_output
+
+    - name: "[4/7] Show Hook startup status"
+      debug:
+        var: hook_up_output.services
+      when: hook_up_output is defined
+
+    # -------------------------------------------------------------------------
+    #  PHASE 4: Deploy Replay Engine (Python FastAPI)
+    # -------------------------------------------------------------------------
+
+    - name: "[5/7] Build REPLAY-ENGINE images (docker compose build)"
+      community.docker.docker_compose_v2:
+        project_src: "{{ engine_dir }}"
+        build:        always
+        state:        present
+      register: engine_build_output
+
+    - name: "[6/7] Start REPLAY-ENGINE containers (docker compose up -d)"
+      community.docker.docker_compose_v2:
+        project_src: "{{ engine_dir }}"
+        state:        present
+      register: engine_up_output
+
+    - name: "[6/7] Show Engine startup status"
+      debug:
+        var: engine_up_output.services
+      when: engine_up_output is defined
+
+    # -------------------------------------------------------------------------
+    #  PHASE 5: Cleanup — Docker System Prune
+    # -------------------------------------------------------------------------
+
+    - name: "[7/7] Prune unused Docker images, containers, and networks"
+      community.docker.docker_prune:
+        containers:      true
+        images:          true
+        networks:        true
+        volumes:         false   # Safety: Keep volumes to avoid wiping Redis data!
+        builder_cache:   true
+
+    # -------------------------------------------------------------------------
+    #  Summary — Print access URLs after successful deployment
+    # -------------------------------------------------------------------------
+
+    - name: "Deployment Complete — Access URLs"
+      debug:
+        msg:
+          - "============================================"
+          - " DLTRF Deployment Successful!"
+          - "============================================"
+          - " Webapp (via Nginx) :  http://20.212.82.99"
+          - " Log Dashboard      :  http://20.212.82.99:5000"
+          - " Replay Engine API  :  http://20.212.82.99:8000"
+          - " HTML Report        :  http://20.212.82.99:8000/report"
+          - "============================================"
