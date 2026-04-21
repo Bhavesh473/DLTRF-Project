@@ -44,7 +44,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Subtle background pattern ── */
     body::before {
       content: '';
       position: fixed; inset: 0; z-index: 0;
@@ -56,7 +55,7 @@
 
     .shell {
       position: relative; z-index: 1;
-      max-width: 460px;
+      max-width: 800px;
       margin: 0 auto;
       min-height: 100dvh;
       padding-bottom: 48px;
@@ -65,7 +64,6 @@
       gap: 0;
     }
 
-    /* ── Header ── */
     header {
       padding: 28px 24px 20px;
       display: flex;
@@ -128,10 +126,8 @@
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
     .status-chip.online .status-dot { animation: pulse 2.4s ease-in-out infinite; }
 
-    /* ── Content sections ── */
     .content { padding: 20px 20px 0; display: flex; flex-direction: column; gap: 16px; }
 
-    /* ── Card ── */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -173,7 +169,6 @@
     }
     .card-body { padding: 16px 20px; }
 
-    /* ── Quick links grid ── */
     .link-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -208,7 +203,6 @@
       letter-spacing: 0.5px;
     }
 
-    /* ── Form elements ── */
     .field-label {
       display: block;
       font-family: var(--mono);
@@ -243,7 +237,6 @@
     .field-row { display: flex; gap: 10px; align-items: flex-end; }
     .field-row .styled-select { flex: 1; }
 
-    /* ── Buttons ── */
     .btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 7px;
       padding: 11px 20px;
@@ -278,7 +271,6 @@
     .btn-warning:not(:disabled):hover  { background: #fef3c7; }
     .btn-warning:not(:disabled):active { transform: scale(0.97); }
 
-    /* ── Replay button area ── */
     .replay-hero {
       padding: 28px 20px;
       display: flex; flex-direction: column; align-items: center; gap: 20px;
@@ -289,7 +281,6 @@
       width: 180px; height: 180px;
     }
 
-    /* Decorative rings */
     .ring {
       position: absolute;
       border-radius: 50%;
@@ -350,13 +341,11 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Timeframe selector above button ── */
     .timeframe-field {
       width: 100%;
       max-width: 280px;
     }
 
-    /* ── Log output ── */
     #replayLog {
       display: none;
       width: 100%;
@@ -378,7 +367,6 @@
     .log-msg.warn { color: var(--amber); }
     .log-msg.fail { color: var(--red); }
 
-    /* ── Toast ── */
     #toast {
       position: fixed; bottom: 28px; left: 50%;
       transform: translateX(-50%) translateY(70px);
@@ -401,7 +389,6 @@
     #toast.success { border-color: #a7f3d0; color: var(--emerald); }
     #toast.error   { border-color: #fca5a5; color: var(--red); }
 
-    /* ── Footer ── */
     footer {
       margin-top: 8px;
       padding: 20px 24px;
@@ -419,8 +406,8 @@
   <!-- ── Header ── -->
   <header>
     <div class="brand">
-      <div class="brand-title">DLTRF <span class="accent">v1</span> · AZURE ·</div>
-      <div class="brand-sub">Mission Control</div>
+      <!-- FIX 3: Cleaned title — no "v1 AZURE" or "Mission Control" -->
+      <div class="brand-title">DLTRF</div>
     </div>
     <div class="status-chip" id="statusChip">
       <div class="status-dot" id="statusDot"></div>
@@ -438,12 +425,14 @@
       </div>
       <div class="card-body">
         <div class="link-grid">
-          <a class="link-tile" href="/" target="_blank" rel="noopener">
+          <!-- FIX 1a: Correct id="webappLink" -->
+          <a class="link-tile" id="webappLink" target="_blank" rel="noopener">
             <div class="tile-emoji">🌐</div>
             <div class="tile-name">Web App</div>
             <div class="tile-desc">Target Application</div>
           </a>
-          <a class="link-tile" href="/dashboard" target="_blank" rel="noopener">
+          <!-- FIX 1b: Correct id="logDashLink" -->
+          <a class="link-tile" id="logDashLink" target="_blank" rel="noopener">
             <div class="tile-emoji">📊</div>
             <div class="tile-name">Log Dashboard</div>
             <div class="tile-desc">Live Log Stream</div>
@@ -481,7 +470,6 @@
       </div>
       <div class="replay-hero">
 
-        <!-- Timeframe picker -->
         <div class="timeframe-field">
           <label class="field-label" for="replayTimeframe">Replay Timeframe</label>
           <select class="styled-select" id="replayTimeframe">
@@ -493,7 +481,6 @@
           </select>
         </div>
 
-        <!-- Big launch button -->
         <div class="replay-btn-wrap">
           <div class="ring"></div>
           <div class="ring"></div>
@@ -504,28 +491,25 @@
           </button>
         </div>
 
-        <!-- Live log -->
         <div id="replayLog"></div>
       </div>
     </div>
 
   </div><!-- /content -->
 
-  <footer>DLTRF v1 · AZURE · MISSION CONTROL</footer>
+  <!-- FIX 3: Cleaned footer -->
+  <footer>DLTRF</footer>
 </div>
 
 <div id="toast"></div>
 
 <script>
-  // ── Config ─────────────────────────────────────────────────────────────────
-  // All calls use relative paths — no hardcoded IPs
   const TOKEN   = 'mysecret';
   const HEADERS = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 
   let pollingTimer = null;
   let pollingElapsed = 0;
 
-  // ── Toast ──────────────────────────────────────────────────────────────────
   function toast(msg, type = 'success', ms = 3500) {
     const el = document.getElementById('toast');
     el.textContent = msg;
@@ -534,7 +518,6 @@
     el._t = setTimeout(() => { el.className = ''; }, ms);
   }
 
-  // ── Health check ───────────────────────────────────────────────────────────
   async function checkHealth() {
     const chip  = document.getElementById('statusChip');
     const label = document.getElementById('statusLabel');
@@ -552,7 +535,6 @@
   checkHealth();
   setInterval(checkHealth, 10_000);
 
-  // ── Log helper ─────────────────────────────────────────────────────────────
   function logLine(text, cls = '') {
     const box = document.getElementById('replayLog');
     box.classList.add('active');
@@ -564,7 +546,6 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  // ── Reset Logs ─────────────────────────────────────────────────────────────
   async function resetLogs() {
     const btn       = document.getElementById('resetBtn');
     const timeframe = document.getElementById('resetSelect').value;
@@ -599,7 +580,6 @@
     }
   }
 
-  // ── Start Replay ───────────────────────────────────────────────────────────
   async function startReplay() {
     const btn       = document.getElementById('replayBtn');
     const icon      = document.getElementById('replayIcon');
@@ -645,7 +625,6 @@
       return;
     }
 
-    // Poll for report
     pollingElapsed = 0;
     clearInterval(pollingTimer);
     pollingTimer = setInterval(async () => {
@@ -688,6 +667,10 @@
     icon.textContent = '🚀';
     label.textContent = 'Start Replay';
   }
+
+  // FIX 2: URL assignment moved outside resetReplayBtn(), runs on page load
+  document.getElementById('webappLink').href  = `http://${window.location.hostname}`;
+  document.getElementById('logDashLink').href = `http://${window.location.hostname}:5000`;
 </script>
 </body>
 </html>
