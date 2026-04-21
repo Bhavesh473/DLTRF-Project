@@ -109,6 +109,54 @@ def _make_redis_adapter() -> RedisStreamAdapter:
     )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Timeframe helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Map of timeframe label → seconds. "all" means no cutoff (None).
+_TIMEFRAME_SECONDS: Dict[str, Optional[int]] = {
+    "15m": 15 * 60,
+    "1h":  1  * 60 * 60,
+    "4h":  4  * 60 * 60,
+    "24h": 24 * 60 * 60,
+    "all": None,
+}
+
+def _resolve_start_ts(timeframe: Optional[str]) -> Optional[str]:
+    """
+    Convert a timeframe string into a Redis Stream ID cutoff string.
+
+    Redis XRANGE uses millisecond-epoch IDs. We return a string like
+    "1713600000000-0" (the lowest possible entry at that millisecond),
+    or None when no cutoff is required ("all" or missing timeframe).
+
+    The replayer must pass this as the `start_ts` / XRANGE start argument.
+    If None, it passes "-" (Redis shorthand for the very first entry).
+    """
+    if not timeframe:
+        return None
+
+    key = timeframe.strip().lower()
+
+    if key not in _TIMEFRAME_SECONDS:
+        raise ValueError(
+            f"Invalid timeframe '{timeframe}'. "
+            "Valid values: 15m, 1h, 4h, 24h, all"
+        )
+
+    seconds = _TIMEFRAME_SECONDS[key]
+
+    if seconds is None:
+        # "all" → replay from the very beginning
+        return None
+
+    now_ms     = int(time.time() * 1000)
+    cutoff_ms  = now_ms - (seconds * 1000)
+
+    # Redis Stream ID format: "<ms>-<seq>". Using seq=0 means
+    # "the earliest possible entry at this millisecond timestamp".
+    return f"{cutoff_ms}-0"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Auth
 # ─────────────────────────────────────────────────────────────────────────────
 async def verify_token(credentials=Depends(security)):
@@ -120,13 +168,17 @@ async def verify_token(credentials=Depends(security)):
 # Request / response models
 # ─────────────────────────────────────────────────────────────────────────────
 class StartRequest(BaseModel):
-    session_id:                  Optional[str]  = None
-    start_ts:                    Optional[str]  = None
-    end_ts:                      Optional[str]  = None
-    mode:                        str            = "replay"
-    speed:                       float          = 1.0
-    max_events:                  int            = 1000
-    enable_divergence_detection: bool           = True
+    session_id:                  Optional[str]   = None
+    start_ts:                    Optional[str]   = None
+    end_ts:                      Optional[str]   = None
+    mode:                        str             = "replay"
+    speed:                       float           = 1.0
+    max_events:                  int             = 1000
+    enable_divergence_detection: bool            = True
+    # ── NEW: optional timeframe selector from the dashboard ──────────────────
+    # When provided, overrides start_ts with a computed cutoff timestamp.
+    # Accepted values: "15m" | "1h" | "4h" | "24h" | "all"
+    timeframe:                   Optional[str]   = None
 
 class StartResponse(BaseModel):
     replay_id: str
@@ -177,16 +229,39 @@ async def start_replay(request: StartRequest):
     try:
         replay_id = f"r-{uuid.uuid4().hex[:8]}"
 
+        # ── Resolve start_ts from timeframe if provided ───────────────────────
+        # Priority: explicit start_ts > timeframe > None (replay all)
+        effective_start_ts = request.start_ts
+
+        if request.timeframe and not request.start_ts:
+            try:
+                effective_start_ts = _resolve_start_ts(request.timeframe)
+            except ValueError as ve:
+                raise HTTPException(status_code=422, detail=str(ve))
+
+            if effective_start_ts:
+                logger.info(
+                    f"[{replay_id}] Timeframe '{request.timeframe}' → "
+                    f"start_ts={effective_start_ts}"
+                )
+            else:
+                logger.info(f"[{replay_id}] Timeframe 'all' → replaying full stream")
+
+        # ── Build replay config ────────────────────────────────────────────────
+        # start_ts is passed into the RedisStreamAdapter / replayer so that
+        # XRANGE calls use this as the lower-bound stream ID.
+        # When None, the adapter defaults to "-" (stream beginning).
         replay_config: Dict[str, Any] = {
             "replay_id":                   replay_id,
             "session_id":                  request.session_id,
-            "start_ts":                    request.start_ts,
+            "start_ts":                    effective_start_ts,   # ← computed above
             "end_ts":                      request.end_ts,
             "mode":                        request.mode,
             "speed":                       request.speed,
             "max_events":                  request.max_events,
             "enable_divergence_detection": request.enable_divergence_detection,
             "checkpoint_every":            CHECKPOINT_EVERY,
+            "timeframe":                   request.timeframe,    # kept for logging/reports
         }
 
         _session_manager.create_session(replay_id, replay_config)
@@ -220,9 +295,11 @@ async def start_replay(request: StartRequest):
                     pass
 
         asyncio.create_task(_run())
-        logger.info(f"Replay {replay_id} queued")
+        logger.info(f"Replay {replay_id} queued (start_ts={effective_start_ts})")
         return StartResponse(replay_id=replay_id, status="started")
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to start replay: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -282,7 +359,6 @@ async def reset_logs(request: LogResetRequest):
                                calculate the cutoff ms and trim everything before it.
     """
 
-    # Map timeframe labels to seconds
     TIMEFRAME_MAP = {
         "15m": 15 * 60,
         "1h":  1  * 60 * 60,
@@ -294,7 +370,6 @@ async def reset_logs(request: LogResetRequest):
 
     try:
         if timeframe == "all":
-            # Nuclear option: wipe the entire stream
             deleted = await _redis_client.delete(STREAM_KEY)
             if deleted:
                 logger.info(f"[reset_logs] Stream '{STREAM_KEY}' fully deleted.")
@@ -305,7 +380,6 @@ async def reset_logs(request: LogResetRequest):
                     "message":   f"Stream '{STREAM_KEY}' has been fully cleared.",
                 }
             else:
-                # Key didn't exist — that's still a success state
                 return {
                     "status":    "ok",
                     "timeframe": "all",
@@ -315,15 +389,13 @@ async def reset_logs(request: LogResetRequest):
 
         elif timeframe in TIMEFRAME_MAP:
             seconds   = TIMEFRAME_MAP[timeframe]
-            now_ms    = int(time.time() * 1000)         # Current Unix time in ms
-            cutoff_ms = now_ms - (seconds * 1000)       # Cutoff = now minus window
+            now_ms    = int(time.time() * 1000)
+            cutoff_ms = now_ms - (seconds * 1000)
 
-            # XTRIM MINID removes all entries with IDs less than the cutoff timestamp.
-            # This is safe and O(N) only on the deleted entries.
             trimmed = await _redis_client.xtrim(
                 STREAM_KEY,
-                minid=cutoff_ms,   # Delete everything older than the window
-                approximate=False, # Exact trim for precision
+                minid=cutoff_ms,
+                approximate=False,
             )
 
             logger.info(
@@ -349,7 +421,7 @@ async def reset_logs(request: LogResetRequest):
             )
 
     except HTTPException:
-        raise  # Re-raise validation errors as-is
+        raise
 
     except Exception as e:
         logger.error(f"[reset_logs] Failed to reset stream: {e}", exc_info=True)
