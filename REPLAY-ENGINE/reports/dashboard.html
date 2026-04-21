@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>DLTRF Mission Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:         #080b0f;
+      --surface:    #0d1117;
+      --surface2:   #161d27;
+      --border:     #1e2d3d;
+      --accent:     #00e5ff;
+      --accent-dim: #00e5ff22;
+      --amber:      #ffab00;
+      --amber-dim:  #ffab0018;
+      --green:      #00e676;
+      --red:        #ff1744;
+      --text:       #c9d1d9;
+      --text-dim:   #4a5568;
+      --mono:       'Share Tech Mono', monospace;
+      --display:    'Barlow Condensed', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--display);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── Scanline overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 9999;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.04) 2px,
+        rgba(0,0,0,0.04) 4px
+      );
+      pointer-events: none;
+    }
+
+    /* ── Ambient glow ── */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -30%; left: 50%;
+      transform: translateX(-50%);
+      width: 120vw; height: 60vh;
+      background: radial-gradient(ellipse, #00e5ff08 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .shell {
+      position: relative; z-index: 1;
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100dvh;
+      padding: 0 0 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(180deg, #0d1117 0%, transparent 100%);
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      display: flex; flex-direction: column;
+    }
+    .brand-tag {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .brand-name {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      line-height: 1;
+      color: #fff;
+    }
+    .brand-name span { color: var(--accent); }
+
+    .status-pill {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 1px;
+      transition: border-color 0.4s;
+    }
+    .status-pill.online  { border-color: var(--green); }
+    .status-pill.offline { border-color: var(--red); }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: background 0.4s, box-shadow 0.4s;
+    }
+    .status-pill.online  .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .status-pill.offline .dot { background: var(--red);   box-shadow: 0 0 8px var(--red);   }
+    @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .status-pill.online .dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+    #status-label { color: var(--text); }
+
+    /* ── Section wrapper ── */
+    .section {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      animation: fadeSlide 0.5s ease both;
+    }
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .section:nth-child(2) { animation-delay: 0.05s; }
+    .section:nth-child(3) { animation-delay: 0.10s; }
+    .section:nth-child(4) { animation-delay: 0.15s; }
+    .section:nth-child(5) { animation-delay: 0.20s; }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    /* ── Quick Links ── */
+    .link-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .link-btn {
+      display: flex; flex-direction: column; align-items: flex-start;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.2s, background 0.2s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .link-btn:active { transform: scale(0.97); background: var(--surface2); }
+    .link-btn:hover  { border-color: var(--accent); }
+    .link-icon { font-size: 20px; margin-bottom: 6px; }
+    .link-title {
+      font-size: 14px; font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #fff;
+    }
+    .link-url {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text-dim);
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+    }
+
+    /* ── Reset Logs ── */
+    .reset-row {
+      display: flex; gap: 10px; align-items: stretch;
+    }
+    .styled-select {
+      flex: 1;
+      appearance: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 12px 16px;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5568' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+    .styled-select:focus { border-color: var(--amber); }
+
+    .action-btn {
+      padding: 12px 20px;
+      border-radius: 10px;
+      border: 1px solid;
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+    .btn-amber {
+      background: var(--amber-dim);
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+    .btn-amber:hover  { background: #ffab0030; }
+    .btn-amber:active { transform: scale(0.96); }
+    .btn-amber:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      padding: 10px 22px;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: nowrap;
+      z-index: 9998;
+      transition: transform 0.35s cubic-bezier(.34,1.56,.64,1), opacity 0.35s;
+      opacity: 0;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    #toast.success { border-color: var(--green); color: var(--green); }
+    #toast.error   { border-color: var(--red);   color: var(--red);   }
+
+    /* ── Replay Engine ── */
+    .replay-wrap {
+      padding: 24px 20px;
+      display: flex; flex-direction: column; align-items: center; gap: 18px;
+    }
+
+    .replay-btn-outer {
+      position: relative;
+      width: 200px; height: 200px;
+    }
+    /* Animated ring */
+    .replay-ring {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      opacity: 0.2;
+      animation: ringRotate 6s linear infinite;
+    }
+    .replay-ring::before {
+      content: '';
+      position: absolute; inset: 8px;
+      border-radius: 50%;
+      border: 1px dashed var(--accent);
+      opacity: 0.4;
+      animation: ringRotate 3s linear infinite reverse;
+    }
+    @keyframes ringRotate { to { transform: rotate(360deg); } }
+
+    #replayBtn {
+      position: absolute; inset: 14px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #00e5ff18, #00080a);
+      border: 2px solid var(--accent);
+      color: #fff;
+      cursor: pointer;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 4px;
+      font-family: var(--display);
+      font-weight: 900;
+      font-size: 17px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.3s, border-color 0.3s, box-shadow 0.3s, transform 0.15s;
+      box-shadow: 0 0 30px #00e5ff22, inset 0 0 40px #00e5ff08;
+    }
+    #replayBtn:not(:disabled):hover {
+      box-shadow: 0 0 50px #00e5ff44, inset 0 0 40px #00e5ff18;
+      background: radial-gradient(circle at 35% 35%, #00e5ff28, #001a1f);
+    }
+    #replayBtn:not(:disabled):active { transform: scale(0.96); }
+    #replayBtn:disabled {
+      border-color: var(--text-dim);
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+    .btn-rocket { font-size: 36px; line-height: 1; margin-bottom: 2px; }
+    .btn-label  { font-size: 12px; letter-spacing: 3px; opacity: 0.85; }
+
+    /* Loading spinner on button */
+    .spin {
+      display: inline-block;
+      width: 36px; height: 36px;
+      border: 3px solid #00e5ff33;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 4px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Status log ── */
+    #replayStatus {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.7;
+      min-height: 60px;
+      display: none;
+    }
+    #replayStatus.active { display: block; }
+    .log-line { display: flex; gap: 8px; }
+    .log-ts   { color: var(--accent); flex-shrink: 0; }
+    .log-txt  { color: var(--text); }
+    .log-txt.ok   { color: var(--green); }
+    .log-txt.warn { color: var(--amber); }
+    .log-txt.fail { color: var(--red); }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: auto;
+      padding: 20px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Header / Status ── -->
+  <header>
+    <div class="brand">
+      <div class="brand-tag">Mission Control</div>
+      <div class="brand-name">DL<span>TRF</span></div>
+    </div>
+    <div class="status-pill" id="statusPill">
+      <div class="dot" id="statusDot"></div>
+      <span id="status-label">CHECKING</span>
+    </div>
+  </header>
+
+  <!-- ── Quick Links ── -->
+  <div class="section">
+    <div class="section-label">Quick Access</div>
+    <div class="link-grid">
+      <a class="link-btn" href="http://20.212.82.99" target="_blank" rel="noopener">
+        <div class="link-icon">🌐</div>
+        <div class="link-title">Webapp</div>
+        <div class="link-url">20.212.82.99</div>
+      </a>
+      <a class="link-btn" href="http://20.212.82.99:5000" target="_blank" rel="noopener">
+        <div class="link-icon">📊</div>
+        <div class="link-title">Log Dashboard</div>
+        <div class="link-url">20.212.82.99:5000</div>
+      </a>
+      <a class="link-btn" href="http://20.212.82.99:8000/docs" target="_blank" rel="noopener">
+        <div class="link-icon">📡</div>
+        <div class="link-title">API Docs</div>
+        <div class="link-url">:8000/docs</div>
+      </a>
+      <a class="link-btn" href="http://20.212.82.99:8000/metrics" target="_blank" rel="noopener">
+        <div class="link-icon">📈</div>
+        <div class="link-title">Metrics</div>
+        <div class="link-url">:8000/metrics</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- ── Reset Logs ── -->
+  <div class="section">
+    <div class="section-label">Reset Redis Logs</div>
+    <div class="reset-row">
+      <select class="styled-select" id="timeframeSelect">
+        <option value="15m">Last 15 minutes</option>
+        <option value="1h" selected>Last 1 hour</option>
+        <option value="4h">Last 4 hours</option>
+        <option value="24h">Last 24 hours</option>
+        <option value="all">⚠️ ALL logs</option>
+      </select>
+      <button class="action-btn btn-amber" id="resetBtn" onclick="resetLogs()">
+        RESET
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Replay Engine ── -->
+  <div class="replay-wrap section" style="border-bottom:none;">
+    <div class="section-label" style="align-self:flex-start">Replay Engine</div>
+
+    <div class="replay-btn-outer">
+      <div class="replay-ring"></div>
+      <button id="replayBtn" onclick="startReplay()">
+        <div class="btn-rocket" id="replayIcon">🚀</div>
+        <div class="btn-label" id="replayLabel">START REPLAY</div>
+      </button>
+    </div>
+
+    <div id="replayStatus"></div>
+  </div>
+
+  <footer>DLTRF v1 · AZURE · 20.212.82.99</footer>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // ── Config ────────────────────────────────────────────────────────────────
+  const API     = 'http://20.212.82.99:8000';
+  const TOKEN   = 'mysecret';
+  const HEADERS = { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
+
+  let pollingTimer   = null;
+  let pollingSeconds = 0;
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function toast(msg, type = 'success', duration = 3500) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `show ${type}`;
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => { el.className = ''; }, duration);
+  }
+
+  // ── Health check (polls every 10 s) ──────────────────────────────────────
+  async function checkHealth() {
+    const pill  = document.getElementById('statusPill');
+    const label = document.getElementById('status-label');
+    try {
+      const r = await fetch(`${API}/health`, { signal: AbortSignal.timeout(5000) });
+      if (r.ok) {
+        pill.className  = 'status-pill online';
+        label.textContent = 'ONLINE';
+        return;
+      }
+    } catch (_) {}
+    pill.className  = 'status-pill offline';
+    label.textContent = 'OFFLINE';
+  }
+  checkHealth();
+  setInterval(checkHealth, 10_000);
+
+  // ── Log line helper ───────────────────────────────────────────────────────
+  function logLine(text, cls = '') {
+    const box = document.getElementById('replayStatus');
+    box.classList.add('active');
+    const ts   = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-txt ${cls}">${text}</span>`;
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ── Reset Logs ────────────────────────────────────────────────────────────
+  async function resetLogs() {
+    const btn       = document.getElementById('resetBtn');
+    const timeframe = document.getElementById('timeframeSelect').value;
+
+    if (timeframe === 'all') {
+      if (!confirm('⚠️ This will delete ALL logs from Redis.\nAre you sure?')) return;
+    }
+
+    btn.disabled    = true;
+    btn.textContent = '...';
+
+    try {
+      const r = await fetch(`${API}/logs/reset`, {
+        method:  'POST',
+        headers: HEADERS,
+        body:    JSON.stringify({ timeframe }),
+        signal:  AbortSignal.timeout(10_000),
+      });
+
+      if (r.ok) {
+        const data = await r.json();
+        const removed = data.entries_removed != null ? ` (${data.entries_removed} entries)` : '';
+        toast(`✓ Logs cleared${removed}`, 'success');
+      } else {
+        const err = await r.json().catch(() => ({ detail: 'Unknown error' }));
+        toast(`✗ ${err.detail || r.statusText}`, 'error');
+      }
+    } catch (e) {
+      toast(`✗ Network error: ${e.message}`, 'error');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'RESET';
+    }
+  }
+
+  // ── Start Replay ──────────────────────────────────────────────────────────
+  async function startReplay() {
+    const btn   = document.getElementById('replayBtn');
+    const icon  = document.getElementById('replayIcon');
+    const label = document.getElementById('replayLabel');
+
+    // Disable + show spinner
+    btn.disabled   = true;
+    icon.innerHTML = '<div class="spin"></div>';
+    label.textContent = 'STARTING';
+
+    document.getElementById('replayStatus').innerHTML = '';
+    logLine('Initiating replay request…');
+
+    let replayId;
+    try {
+      const r = await fetch(`${API}/replay/start`, {
+        method:  'POST',
+        headers: HEADERS,
+        body:    JSON.stringify({
+          mode:                        'replay',
+          max_events:                  500,
+          enable_divergence_detection: true,
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || 'API error');
+      }
+
+      const data = await r.json();
+      replayId   = data.replay_id;
+      logLine(`Replay queued → ID: ${replayId}`, 'ok');
+      logLine('Waiting for report file…');
+      label.textContent = 'RUNNING';
+
+    } catch (e) {
+      logLine(`Failed to start: ${e.message}`, 'fail');
+      toast(`✗ ${e.message}`, 'error');
+      resetReplayBtn();
+      return;
+    }
+
+    // Poll for report
+    pollingSeconds = 0;
+    clearInterval(pollingTimer);
+    pollingTimer = setInterval(async () => {
+      pollingSeconds += 3;
+      const reportUrl = `${API}/report/replay_${replayId}.html`;
+
+      if (pollingSeconds > 300) {
+        clearInterval(pollingTimer);
+        logLine('Timed out (5 min). Open report manually.', 'warn');
+        logLine(`→ ${reportUrl}`, 'warn');
+        toast('⏱ Timed out. Check manually.', 'error', 6000);
+        resetReplayBtn();
+        return;
+      }
+
+      try {
+        const head = await fetch(reportUrl, {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(4000),
+        });
+        if (head.ok) {
+          clearInterval(pollingTimer);
+          logLine(`Report ready! (${pollingSeconds}s elapsed)`, 'ok');
+          logLine('Redirecting…', 'ok');
+          toast('✓ Report ready! Opening…', 'success');
+          setTimeout(() => { window.location.href = reportUrl; }, 800);
+        }
+      } catch (_) {
+        // Not ready yet — keep polling silently
+      }
+
+      // Update label with elapsed time
+      label.textContent = `${pollingSeconds}s…`;
+
+    }, 3000);
+  }
+
+  function resetReplayBtn() {
+    const btn   = document.getElementById('replayBtn');
+    const icon  = document.getElementById('replayIcon');
+    const label = document.getElementById('replayLabel');
+    btn.disabled      = false;
+    icon.textContent  = '🚀';
+    label.textContent = 'START REPLAY';
+  }
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ DLTRF Replay Engine — FastAPI control API.
 import asyncio
 import logging
 import os
+import time
 import uuid
 from typing import Any, Dict, Optional
 
@@ -14,7 +15,7 @@ import yaml
 import redis.asyncio as redis
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.security import HTTPBearer
-from fastapi.staticfiles import StaticFiles  # <-- Added Import
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from ..replay.deterministic_replayer import DeterministicReplayer
 from ..replay.session_manager import SessionManager
@@ -26,7 +27,7 @@ from ..common.logging_config import ReplayLogger
 logger = ReplayLogger(__name__)
 
 app = FastAPI(title="DLTRF Replay Engine")
-app.mount("/report", StaticFiles(directory="reports"), name="reports") # <-- Added Mount
+app.mount("/report", StaticFiles(directory="reports"), name="reports")
 
 security = HTTPBearer()
 
@@ -137,6 +138,9 @@ class StopRequest(BaseModel):
 class StopResponse(BaseModel):
     status: str
 
+class LogResetRequest(BaseModel):
+    timeframe: str  # Accepts: "15m" | "1h" | "4h" | "24h" | "all"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +192,7 @@ async def start_replay(request: StartRequest):
         _session_manager.create_session(replay_id, replay_config)
 
         adapter  = _make_redis_adapter()
-        
+
         # 🎯 Correctly instantiate the Byte-Level Engine
         replayer = DeterministicReplayer(adapter, _checkpoint_store, _session_manager)
 
@@ -265,3 +269,91 @@ async def get_status(replay_id: str = Query(...)):
 @app.get("/metrics")
 async def get_prometheus_metrics():
     return Response(content=get_metrics(), media_type="text/plain")
+
+@app.post("/logs/reset", dependencies=[Depends(verify_token)])
+async def reset_logs(request: LogResetRequest):
+    """
+    Trim or fully delete the Redis Stream based on the requested timeframe.
+
+    Strategy:
+      - "all"              → Delete the entire stream key (XDEL equivalent via DEL)
+      - "15m","1h","4h","24h" → Use XTRIM with MINID to cut entries older than N seconds
+                               Redis Stream IDs are millisecond timestamps, so we
+                               calculate the cutoff ms and trim everything before it.
+    """
+
+    # Map timeframe labels to seconds
+    TIMEFRAME_MAP = {
+        "15m": 15 * 60,
+        "1h":  1  * 60 * 60,
+        "4h":  4  * 60 * 60,
+        "24h": 24 * 60 * 60,
+    }
+
+    timeframe = request.timeframe.strip().lower()
+
+    try:
+        if timeframe == "all":
+            # Nuclear option: wipe the entire stream
+            deleted = await _redis_client.delete(STREAM_KEY)
+            if deleted:
+                logger.info(f"[reset_logs] Stream '{STREAM_KEY}' fully deleted.")
+                return {
+                    "status":    "ok",
+                    "timeframe": "all",
+                    "action":    "stream_deleted",
+                    "message":   f"Stream '{STREAM_KEY}' has been fully cleared.",
+                }
+            else:
+                # Key didn't exist — that's still a success state
+                return {
+                    "status":    "ok",
+                    "timeframe": "all",
+                    "action":    "stream_already_empty",
+                    "message":   f"Stream '{STREAM_KEY}' did not exist.",
+                }
+
+        elif timeframe in TIMEFRAME_MAP:
+            seconds   = TIMEFRAME_MAP[timeframe]
+            now_ms    = int(time.time() * 1000)         # Current Unix time in ms
+            cutoff_ms = now_ms - (seconds * 1000)       # Cutoff = now minus window
+
+            # XTRIM MINID removes all entries with IDs less than the cutoff timestamp.
+            # This is safe and O(N) only on the deleted entries.
+            trimmed = await _redis_client.xtrim(
+                STREAM_KEY,
+                minid=cutoff_ms,   # Delete everything older than the window
+                approximate=False, # Exact trim for precision
+            )
+
+            logger.info(
+                f"[reset_logs] Trimmed {trimmed} entries older than {timeframe} "
+                f"from stream '{STREAM_KEY}' (cutoff_ms={cutoff_ms})"
+            )
+            return {
+                "status":          "ok",
+                "timeframe":       timeframe,
+                "action":          "stream_trimmed",
+                "entries_removed": trimmed,
+                "cutoff_epoch_ms": cutoff_ms,
+                "message":         f"Removed {trimmed} log entries older than {timeframe}.",
+            }
+
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Invalid timeframe '{request.timeframe}'. "
+                    "Must be one of: 15m, 1h, 4h, 24h, all"
+                ),
+            )
+
+    except HTTPException:
+        raise  # Re-raise validation errors as-is
+
+    except Exception as e:
+        logger.error(f"[reset_logs] Failed to reset stream: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Redis operation failed: {e}"
+        )

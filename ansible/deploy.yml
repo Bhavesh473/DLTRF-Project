@@ -7,12 +7,15 @@
 #  Mirrors the full logic of dltrf-cloud.ps1, covering:
 #    1. Prerequisites  — Ensure Docker & Docker Compose are installed
 #    2. Code Sync      — Pull latest code from main branch
-#    3. Hook Deploy    — Build & start universal-logging-hook
+#    3. Hook Deploy    — Build & start universal-logging-hook-microservice
 #    4. Engine Deploy  — Build & start REPLAY-ENGINE
 #    5. Cleanup        — Prune unused Docker images
 #
 #  Run from WSL:
 #    ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
+#
+#  NOTE: Uses ansible.builtin.shell for Docker steps (not community.docker)
+#        to avoid Python SDK dependency errors on the remote VM.
 # =============================================================================
 
 - name: Deploy DLTRF to Azure VM
@@ -23,37 +26,34 @@
   #  Variables — single place to update paths/settings
   # ---------------------------------------------------------------------------
   vars:
-    project_root:   "/home/azureuser/dltrf-project"
-    hook_dir:       "/home/azureuser/dltrf-project/universal-logging-hook"
-    engine_dir:     "/home/azureuser/dltrf-project/REPLAY-ENGINE"
-    git_branch:     "main"
+    project_root: "/home/azureuser/DLTRF-Project"
+    hook_dir:     "/home/azureuser/DLTRF-Project/universal-logging-hook-microservice"
+    engine_dir:   "/home/azureuser/DLTRF-Project/REPLAY-ENGINE"
+    git_branch:   "main"
 
-  # ---------------------------------------------------------------------------
-  #  PHASE 1: Prerequisites — Docker & Docker Compose
-  # ---------------------------------------------------------------------------
   tasks:
 
-    - name: "[1/7] Update apt package index"
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600   # Skip update if cache is less than 1 hour old
+    # -------------------------------------------------------------------------
+    #  PHASE 1: Prerequisites — Docker & Docker Compose
+    # -------------------------------------------------------------------------
 
-    - name: "[1/7] Install Docker and dependencies"
+    - name: "[1/6] Install Docker, Docker Compose plugin, Git, and Curl"
       apt:
         name:
           - docker.io
-          - docker-compose-plugin   # Provides the 'docker compose' (v2) sub-command
+          - docker-compose-plugin   # Provides 'docker compose' (v2) sub-command
           - git
           - curl
         state: present
+        update_cache: yes
 
-    - name: "[1/7] Ensure Docker service is started and enabled on boot"
+    - name: "[1/6] Ensure Docker service is started and enabled on boot"
       systemd:
         name: docker
         state: started
         enabled: yes
 
-    - name: "[1/7] Add azureuser to the docker group (avoids needing sudo for docker)"
+    - name: "[1/6] Add azureuser to the docker group (no sudo needed for docker)"
       user:
         name: azureuser
         groups: docker
@@ -63,70 +63,71 @@
     #  PHASE 2: Code Sync — Git Pull
     # -------------------------------------------------------------------------
 
-    - name: "[2/7] Pull latest code from '{{ git_branch }}' branch"
-      git:
-        repo:    "{{ project_root }}"   # Uses the already-cloned repo path
-        dest:    "{{ project_root }}"
-        version: "{{ git_branch }}"
-        update:  yes                    # This is what triggers 'git pull'
-        force:   yes                    # Discard any local uncommitted changes
-      become: false                     # Run as azureuser, not root (git credentials)
+    - name: "[2/6] Pull latest code from '{{ git_branch }}' branch"
+      ansible.builtin.shell: "git pull origin {{ git_branch }}"
+      args:
+        chdir: "{{ project_root }}"
+      become: false   # Run as azureuser, not root (avoids git permission issues)
+      register: git_pull_output
+      changed_when: "'Already up to date.' not in git_pull_output.stdout"
+
+    - name: "[2/6] Show Git pull result"
+      debug:
+        var: git_pull_output.stdout
 
     # -------------------------------------------------------------------------
     #  PHASE 3: Deploy Hook Environment (Nginx, Juice Shop, Redis, Fluentd)
     # -------------------------------------------------------------------------
 
-    - name: "[3/7] Build Hook Microservice images"
-      community.docker.docker_compose_v2:
-        project_src: "{{ hook_dir }}"
-        build:        always           # Always rebuild to pick up code changes
-        state:        present
-      register: hook_build_output
+    - name: "[3/6] Build & start Hook Microservice (docker compose up --build -d)"
+      ansible.builtin.shell: "docker compose up --build -d"
+      args:
+        chdir: "{{ hook_dir }}"
+      register: hook_output
 
-    - name: "[4/7] Start Hook Microservice containers (docker compose up -d)"
-      community.docker.docker_compose_v2:
-        project_src: "{{ hook_dir }}"
-        state:        present          # Equivalent to 'docker compose up -d'
-      register: hook_up_output
-
-    - name: "[4/7] Show Hook startup status"
+    - name: "[3/6] Show Hook deployment result"
       debug:
-        var: hook_up_output.services
-      when: hook_up_output is defined
+        var: hook_output.stdout_lines
 
     # -------------------------------------------------------------------------
     #  PHASE 4: Deploy Replay Engine (Python FastAPI)
     # -------------------------------------------------------------------------
 
-    - name: "[5/7] Build REPLAY-ENGINE images (docker compose build)"
-      community.docker.docker_compose_v2:
-        project_src: "{{ engine_dir }}"
-        build:        always
-        state:        present
-      register: engine_build_output
+    - name: "[4/6] Build & start REPLAY-ENGINE (docker compose up --build -d)"
+      ansible.builtin.shell: "docker compose up --build -d"
+      args:
+        chdir: "{{ engine_dir }}"
+      register: engine_output
 
-    - name: "[6/7] Start REPLAY-ENGINE containers (docker compose up -d)"
-      community.docker.docker_compose_v2:
-        project_src: "{{ engine_dir }}"
-        state:        present
-      register: engine_up_output
-
-    - name: "[6/7] Show Engine startup status"
+    - name: "[4/6] Show Engine deployment result"
       debug:
-        var: engine_up_output.services
-      when: engine_up_output is defined
+        var: engine_output.stdout_lines
 
     # -------------------------------------------------------------------------
-    #  PHASE 5: Cleanup — Docker System Prune
+    #  PHASE 5: Health Check — Confirm containers are actually running
     # -------------------------------------------------------------------------
 
-    - name: "[7/7] Prune unused Docker images, containers, and networks"
-      community.docker.docker_prune:
-        containers:      true
-        images:          true
-        networks:        true
-        volumes:         false   # Safety: Keep volumes to avoid wiping Redis data!
-        builder_cache:   true
+    - name: "[5/6] Verify all containers are running"
+      ansible.builtin.shell: "docker ps --format 'table {% raw %}{{.Names}}\t{{.Status}}\t{{.Ports}}{% endraw %}'"
+      register: running_containers
+
+    - name: "[5/6] Show running containers"
+      debug:
+        var: running_containers.stdout_lines
+
+    # -------------------------------------------------------------------------
+    #  PHASE 6: Cleanup — Docker System Prune
+    #  NOTE: 'docker system prune -f' only removes UNUSED objects.
+    #        Running containers and their volumes are always safe.
+    # -------------------------------------------------------------------------
+
+    - name: "[6/6] Prune unused Docker images, containers, and networks"
+      ansible.builtin.shell: "docker system prune -f"
+      register: prune_output
+
+    - name: "[6/6] Show prune result"
+      debug:
+        var: prune_output.stdout_lines
 
     # -------------------------------------------------------------------------
     #  Summary — Print access URLs after successful deployment
@@ -136,7 +137,7 @@
       debug:
         msg:
           - "============================================"
-          - " DLTRF Deployment Successful!"
+          - " DLTRF Deployment Successful via Ansible!"
           - "============================================"
           - " Webapp (via Nginx) :  http://20.212.82.99"
           - " Log Dashboard      :  http://20.212.82.99:5000"
