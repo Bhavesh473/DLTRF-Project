@@ -144,3 +144,5 @@
           - " Replay Engine API  :  http://20.212.82.99:8000"
           - " HTML Report        :  http://20.212.82.99:8000/report"
           - "============================================"
+
+  Add-Content -Path ".\ansible\deploy.yml" -Value "# Force Docker Rebuild Trigger"
