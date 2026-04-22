@@ -18,7 +18,6 @@ ERROR_RATIO_THRESHOLD = 0.10
 TIME_WINDOW_MINUTES = 5
 MAX_EVENTS_RETURN = 1000
 
-# Sensitive patterns (generic - works with any app)
 SENSITIVE_PATTERNS = [
     r"\bPOST\b", r"\bPUT\b", r"\bDELETE\b",
     r"login", r"logout", r"\bbasket\b", r"\bcart\b",
@@ -26,9 +25,6 @@ SENSITIVE_PATTERNS = [
 ]
 SENSITIVE_RE = re.compile("|".join(SENSITIVE_PATTERNS), re.IGNORECASE)
 
-# ── USER ACTIVITY EXCLUSION FILTER ───────────────────────────────────────────
-# When "User Activity" is ON, exclude these noise paths.
-# Logic: if the path MATCHES this pattern → it is NOT user activity → hide it.
 USER_ACTIVITY_NOISE_RE = re.compile(
     r"(^/assets/|^/vendor/|^/media/|^/chunk-|^/socket\.io/|^/styles\."
     r"|^/scripts\.|^/main\.|^/polyfills\.|^/runtime\.|^/confetti-"
@@ -38,9 +34,7 @@ USER_ACTIVITY_NOISE_RE = re.compile(
     r"|EIO=4&transport=polling|EIO=4&transport=websocket)",
     re.IGNORECASE
 )
-# ─────────────────────────────────────────────────────────────────────────────
 
-# Initialize Redis
 try:
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     redis_client.ping()
@@ -51,75 +45,32 @@ except Exception as e:
     REDIS_AVAILABLE = False
     print(f"⚠️  Redis unavailable: {e}")
 
-# ========================================
-# AUTO-DISCOVERY FUNCTION
-# ========================================
 @lru_cache(maxsize=1)
 def get_discovered_endpoints():
-    """
-    Automatically discover endpoints from Redis.
-    Works with ANY application - no hardcoding!
-    """
     try:
         if not REDIS_AVAILABLE or not redis_client:
-            return {
-                'status': 'error',
-                'message': 'Redis not available',
-                'endpoints': [],
-                'patterns': []
-            }
-
+            return {'status': 'error', 'message': 'Redis not available', 'endpoints': [], 'patterns': []}
         if not redis_client.exists(REDIS_STREAM_KEY):
-            return {
-                'status': 'waiting',
-                'message': 'Waiting for traffic...',
-                'endpoints': [],
-                'patterns': []
-            }
-
+            return {'status': 'waiting', 'message': 'Waiting for traffic...', 'endpoints': [], 'patterns': []}
         total = redis_client.xlen(REDIS_STREAM_KEY)
-
         if total == 0:
-            return {
-                'status': 'empty',
-                'message': 'No traffic captured yet',
-                'endpoints': [],
-                'patterns': []
-            }
-
+            return {'status': 'empty', 'message': 'No traffic captured yet', 'endpoints': [], 'patterns': []}
         endpoint_keys = redis_client.smembers('discovered_endpoints')
-
         if endpoint_keys:
             endpoints = []
             for key in endpoint_keys:
                 try:
                     method, path = key.split('|', 1)
                     count = redis_client.hget('endpoint_counts', key) or 0
-                    endpoints.append({
-                        'method': method,
-                        'path': path,
-                        'count': int(count),
-                        'pattern': re.escape(path)
-                    })
+                    endpoints.append({'method': method, 'path': path, 'count': int(count), 'pattern': re.escape(path)})
                 except:
                     continue
-
             endpoints.sort(key=lambda x: x['count'], reverse=True)
             patterns = [e['pattern'] for e in endpoints]
-
-            return {
-                'status': 'active',
-                'message': f'Discovered {len(endpoints)} endpoints from {total} requests',
-                'endpoints': endpoints,
-                'patterns': patterns,
-                'total': total
-            }
-
+            return {'status': 'active', 'message': f'Discovered {len(endpoints)} endpoints from {total} requests', 'endpoints': endpoints, 'patterns': patterns, 'total': total}
         else:
-            # Fallback: Worker not running - read last 1000 events manually
             events = redis_client.xrevrange(REDIS_STREAM_KEY, '+', '-', count=1000)
             endpoints = {}
-
             for event_id, data in events:
                 try:
                     payload_str = data.get('payload', '{}')
@@ -128,35 +79,16 @@ def get_discovered_endpoints():
                     path = payload.get('path', '/')
                     key = f"{method}|{path}"
                     if key not in endpoints:
-                        endpoints[key] = {
-                            'method': method,
-                            'path': path,
-                            'count': 0,
-                            'pattern': re.escape(path)
-                        }
+                        endpoints[key] = {'method': method, 'path': path, 'count': 0, 'pattern': re.escape(path)}
                     endpoints[key]['count'] += 1
                 except:
                     continue
-
             endpoint_list = list(endpoints.values())
             endpoint_list.sort(key=lambda x: x['count'], reverse=True)
             patterns = [e['pattern'] for e in endpoint_list]
-
-            return {
-                'status': 'active',
-                'message': f'Discovered {len(endpoint_list)} endpoints (fallback mode)',
-                'endpoints': endpoint_list,
-                'patterns': patterns,
-                'total': total
-            }
-
+            return {'status': 'active', 'message': f'Discovered {len(endpoint_list)} endpoints (fallback mode)', 'endpoints': endpoint_list, 'patterns': patterns, 'total': total}
     except Exception as e:
-        return {
-            'status': 'error',
-            'message': f'Error: {str(e)}',
-            'endpoints': [],
-            'patterns': []
-        }
+        return {'status': 'error', 'message': f'Error: {str(e)}', 'endpoints': [], 'patterns': []}
 
 
 def clear_endpoint_cache():
@@ -168,28 +100,15 @@ threading.Thread(target=clear_endpoint_cache, daemon=True).start()
 
 
 def is_user_activity(msg: str) -> bool:
-    """
-    Return True if this log entry counts as a real user action.
-    Strategy: exclude known noise paths; everything else is user activity.
-    """
     return not USER_ACTIVITY_NOISE_RE.search(msg)
 
-
-# ========================================
-# END AUTO-DISCOVERY
-# ========================================
 
 def parse_timestamp(timestamp_str):
     if not timestamp_str:
         return datetime.utcnow()
     try:
         ts = timestamp_str.replace('Z', '').replace('T', ' ')
-        formats = [
-            "%Y-%m-%d %H:%M:%S.%f",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S.%f",
-            "%Y-%m-%dT%H:%M:%S"
-        ]
+        formats = ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"]
         for fmt in formats:
             try:
                 return datetime.strptime(ts[:len(fmt)-2 if '.%f' in fmt else len(fmt)], fmt.replace('.%f', ''))
@@ -201,7 +120,6 @@ def parse_timestamp(timestamp_str):
         return datetime.utcnow()
 
 
-# 🎯 Fetch 25,000 logs so heavy UI frameworks don't push POST requests out of the window
 def read_logs_from_redis(limit=25000):
     if not REDIS_AVAILABLE or not redis_client:
         return []
@@ -215,16 +133,12 @@ def read_logs_from_redis(limit=25000):
                     payload = json.loads(payload_str) if isinstance(payload_str, str) else payload_str
                     msg = f"{payload.get('method', 'GET')} {payload.get('path', '')}".strip() or payload.get('message', '')
                 except Exception:
-                    # 🎯 DASHBOARD RESCUE BLOCK
-                    # If json.loads fails because of Nginx truncation, salvage the routing info so it shows in the UI!
                     method_m = re.search(r'"method"\s*:\s*"([^"]+)"', payload_str, re.IGNORECASE)
                     path_m = re.search(r'"path"\s*:\s*"([^"]+)"', payload_str, re.IGNORECASE)
                     method = method_m.group(1).upper() if method_m else "POST"
                     path = path_m.group(1) if path_m else "/truncated-upload"
-                    
                     payload = {"method": method, "path": path, "status": "TRUNCATED BY NGINX"}
                     msg = f"⚠️ {method} {path} [Massive Payload Truncated]"
-
                 log_entry = {
                     "timestamp": payload.get("timestamp") or fields.get("timestamp") or datetime.utcnow().isoformat() + "Z",
                     "level": str(payload.get("level", "INFO")).upper(),
@@ -247,18 +161,13 @@ def read_logs_from_docker():
     logs = []
     app_host = os.getenv('APP_HOST', 'target-app')
     containers = ["universal-logging-fluentd", "app-proxy", app_host, "universal-logging-redis"]
-
     for container in containers:
         try:
-            result = subprocess.run(
-                # 🎯 Expand Docker tail to prevent blindspots
-                ["docker", "logs", "--tail", "25000", container],
-                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10
-            )
+            result = subprocess.run(["docker", "logs", "--tail", "25000", container],
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10)
             raw_lines = result.stdout.splitlines()
         except Exception:
             raw_lines = []
-
         for line in raw_lines:
             line = line.strip()
             if not line:
@@ -292,7 +201,6 @@ def read_logs_from_docker():
                 }
                 log_entry["sensitive"] = bool(SENSITIVE_RE.search(line))
             logs.append(log_entry)
-
     try:
         logs.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
     except Exception:
@@ -372,7 +280,6 @@ def evaluate_metrics(logs):
     error_warn = errs + warns
     error_ratio = (error_warn / total) if total > 0 else 0.0
     events_per_min = total / max(0.001, TIME_WINDOW_MINUTES)
-
     if total == 0:
         volume_label = "none"
     elif total < 100:
@@ -381,10 +288,8 @@ def evaluate_metrics(logs):
         volume_label = "medium"
     else:
         volume_label = "high"
-
     highload = (total >= VOLUME_THRESHOLD) and (error_ratio >= ERROR_RATIO_THRESHOLD)
     reason = "volume_and_error_ratio" if highload else ("no_events" if total == 0 else "normal")
-
     return {
         "total": total, "errs": errs, "warns": warns, "sensitive": sensitive_count,
         "error_warn": error_warn, "error_ratio": error_ratio, "events_per_min": events_per_min,
@@ -406,18 +311,14 @@ def api_logs():
 
     logs = read_logs(use_redis=use_redis)
     logs = filter_by_time_range(logs, time_range)
-
     if hide_duplicates:
         logs = deduplicate_logs(logs, keep_app_logs=True)
 
     filtered_logs = []
     for log in logs:
         msg = str(log.get("message", ""))
-
-        # ── User Activity filter: exclude static noise ────────────────────────
         if user_activity_only and not is_user_activity(msg):
             continue
-
         if level_filter and log["level"] != level_filter:
             continue
         if source_filter and source_filter not in str(log.get("source", "")).lower():
@@ -433,7 +334,6 @@ def api_logs():
 
     metrics = evaluate_metrics(filtered_logs)
     limited = filtered_logs[:max(0, min(limit, MAX_EVENTS_RETURN))]
-
     return jsonify({
         "metrics": metrics,
         "logs": limited,
@@ -459,7 +359,6 @@ def export_json():
 
     logs = read_logs(use_redis=use_redis)
     logs = filter_by_time_range(logs, time_range)
-
     if hide_duplicates:
         logs = deduplicate_logs(logs, keep_app_logs=True)
 
@@ -494,132 +393,726 @@ def api_endpoints():
     return jsonify(get_discovered_endpoints())
 
 
+# ── UI CHANGES SUMMARY ────────────────────────────────────────────────────────
+# Dropped Bootstrap entirely — replaced with ~100 lines of plain CSS.
+# Palette: dark grey (#1a1a1a / #212121 / #2a2a2a) — feels like a terminal,
+#   not a SaaS product. Looks like something a student actually wrote.
+# Font: system monospace stack for log rows; system sans for UI chrome.
+#   No Google Fonts import — keeps it fast and lo-fi.
+# Log rows: simple left-border color indicator per level (the easiest, most
+#   readable pattern for a dev console). No badges with backgrounds.
+# Sensitive rows: faint yellow-tinted background + "⚠ sensitive" text label
+#   in source column — less alarming than the original gradient.
+# Metrics panel: plain two-column text layout, no flexbox stacking.
+# Time-range buttons: plain toggle style, not rounded pill buttons.
+# Toolbar: single row with basic spacing; no status-badge floating element.
+# Chart: same Chart.js instance; only axis colors tweaked to match theme.
+# Scrollbar: thin dark scrollbar via webkit, doesn't look out of place.
+# NO new libraries. NO animations. NO gradients. Kept it readable.
+# ─────────────────────────────────────────────────────────────────────────────
 TEMPLATE = """<!doctype html>
-<html><head><meta charset="utf-8"/><title>Professional Log Console</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Log Console</title>
 <style>
-body{background:#0b1220;color:#e6eef8}.card{background:#0f1724;border:1px solid rgba(255,255,255,0.12)}.card .d-flex.gap-2 strong{color:#c5d3e8;font-size:.95rem;font-weight:600}.card .d-flex.gap-2 span{color:#fff!important;font-weight:700;font-size:1.2rem;text-shadow:0 0 4px rgba(255,255,255,.3)}.applied-filters{font-size:1rem;color:#e0f0ff!important;padding:10px;background:rgba(45,156,219,.15);border-radius:6px;border-left:3px solid #2d9cdb;font-weight:600}h6.mb-0,h6.tiny{color:#e6f4ff!important;font-size:1.1rem!important;font-weight:700!important;text-transform:uppercase;letter-spacing:.5px}#level-chart{background:rgba(255,255,255,.05);border-radius:8px;padding:10px}.badge-ERROR{background:#e02424;font-weight:700}.badge-FATAL{background:#8b0000;font-weight:700}.badge-WARN{background:#ff8c00;color:#000;font-weight:700}.badge-INFO{background:#2d9cdb;font-weight:700}.badge-DEBUG{background:#6b7280;font-weight:700}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Roboto Mono",monospace}.tiny{font-size:.82rem;color:#b8c9dc}.meta{font-size:.85rem;background:rgba(255,255,255,.05);padding:12px;border-radius:6px;max-height:300px;overflow-y:auto;border:1px solid rgba(255,255,255,.1)}.no-logs{padding:30px;text-align:center;color:#9fb0c9}.table-row:hover{background:rgba(255,255,255,.08);cursor:pointer}.sensitive-row{background:linear-gradient(90deg,rgba(255,255,0,.08),rgba(255,140,0,.04));border-left:4px solid rgba(255,140,0,.9)}.sensitive-tag{color:#ff8c00;font-weight:700;margin-left:8px;font-size:.9rem;background:rgba(255,140,0,.2);padding:2px 8px;border-radius:4px}.status-badge{padding:8px 14px;border-radius:6px;background:#0f1724;border:2px solid #2d9cdb;font-weight:600;font-size:.85rem;margin-right:20px}.live-on{color:#0f0;font-weight:700;font-size:1.1rem}.live-off{color:#888;font-size:1.1rem}.form-label{color:#d0e0f0!important;font-weight:600!important;font-size:.9rem!important}#sensitive-count{background:rgba(255,140,0,.25);padding:4px 12px;border-radius:6px;font-size:1rem!important}.header-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.dedup-highlight{background:rgba(0,255,0,.1);padding:2px 6px;border-radius:4px;color:#0f0;font-size:.85rem;margin-left:8px}.export-btn{background:#2d9cdb;border:none;color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;margin:0 5px}.export-btn:hover{background:#1e7ba8}.time-range-btns{display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap}.time-btn{background:#0f1724;border:1px solid #2d9cdb;color:#e0f0ff;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600}.time-btn.active{background:#2d9cdb;color:#fff}
+/* base reset — keep it simple */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* system font stack — no imports needed */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  background: #1a1a1a;
+  color: #d0d0d0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* monospace for anything log-related */
+.mono {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", "Menlo", monospace;
+  font-size: 12px;
+}
+
+/* ── top bar ── */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #212121;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+#topbar h1 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-right: 6px;
+}
+/* small status text in topbar */
+#topbar .status-text {
+  font-size: 11px;
+  color: #888;
+}
+#topbar .sep { color: #444; }
+
+/* toggle switches — simple, no animation overkill */
+.sw-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.sw-wrap input[type=checkbox] {
+  appearance: none;
+  width: 26px; height: 14px;
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 7px;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+.sw-wrap input[type=checkbox]:checked { background: #4a7fd4; border-color: #4a7fd4; }
+.sw-wrap input[type=checkbox]::after {
+  content: '';
+  position: absolute;
+  top: 1px; left: 1px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #aaa;
+}
+.sw-wrap input[type=checkbox]:checked::after { left: 13px; background: #fff; }
+.sw-wrap label { font-size: 11px; color: #aaa; cursor: pointer; }
+/* highlight dedup and user-activity labels slightly */
+.sw-wrap label.hl { color: #c8a84b; }
+
+/* buttons */
+.btn {
+  padding: 3px 9px;
+  font-size: 11px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #ccc;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.btn:hover { background: #333; color: #eee; }
+.btn.primary { background: #2d5fa0; border-color: #3a6fb0; color: #e8e8e8; }
+.btn.primary:hover { background: #3a6fb0; }
+/* live button active state */
+.btn.live-active { background: #1e3d1e; border-color: #3a7a3a; color: #7dc87d; }
+
+/* ── main layout: sidebar + log panel ── */
+#body-wrap {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── sidebar ── */
+#sidebar {
+  width: 210px;
+  min-width: 210px;
+  background: #212121;
+  border-right: 1px solid #333;
+  overflow-y: auto;
+  flex-shrink: 0;
+  padding: 10px;
+}
+
+/* sidebar section headings */
+.s-head {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #666;
+  margin: 10px 0 6px;
+}
+.s-head:first-child { margin-top: 2px; }
+
+/* filter fields */
+.field { margin-bottom: 7px; }
+.field label {
+  display: block;
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 3px;
+}
+.field input, .field select {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  color: #d0d0d0;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  outline: none;
+}
+.field input:focus, .field select:focus { border-color: #4a7fd4; }
+.field select option { background: #2a2a2a; }
+
+/* metrics table — plain and readable */
+.metrics-tbl { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.metrics-tbl td {
+  padding: 3px 0;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.metrics-tbl td:first-child { color: #888; }
+.metrics-tbl td:last-child {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 11px;
+  text-align: right;
+  color: #d0d0d0;
+}
+/* color the error/warn/sensitive metric values */
+.metrics-tbl .v-err { color: #d66; }
+.metrics-tbl .v-warn { color: #c8a84b; }
+.metrics-tbl .v-sensitive { color: #c8a84b; }
+
+/* ── log area ── */
+#log-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* time range strip */
+#time-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 6px 10px;
+  background: #212121;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+/* time-range buttons as a segmented group */
+.time-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  color: #888;
+  cursor: pointer;
+  margin-right: -1px; /* overlap borders */
+}
+.time-btn:first-child { border-radius: 3px 0 0 3px; }
+.time-btn:last-child  { border-radius: 0 3px 3px 0; margin-right: 0; }
+.time-btn.active { background: #2a3f5e; border-color: #4a7fd4; color: #c0d8f8; z-index: 1; position: relative; }
+.time-btn:hover:not(.active) { background: #252525; color: #bbb; }
+
+/* filter summary bar */
+#applied-filters {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #666;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+/* highlight active filters inline */
+#applied-filters span.f-active { color: #4a9fd4; }
+#applied-filters span.f-dedup  { color: #7dc87d; }
+#applied-filters span.f-amber  { color: #c8a84b; }
+
+/* chart strip */
+#chart-wrap {
+  padding: 6px 10px 4px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+  height: 68px;
+}
+
+/* scrollable log list */
+#log-scroller {
+  flex: 1;
+  overflow-y: auto;
+  background: #1a1a1a;
+}
+
+/* custom scrollbar — thin and dark */
+#log-scroller::-webkit-scrollbar { width: 5px; }
+#log-scroller::-webkit-scrollbar-track { background: #1a1a1a; }
+#log-scroller::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 3px; }
+
+/* ── log row ── */
+/* using a table for proper column alignment */
+#log-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#log-table thead th {
+  position: sticky;
+  top: 0;
+  background: #212121;
+  border-bottom: 1px solid #333;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #555;
+  text-align: left;
+}
+/* column widths */
+#log-table .c-ts   { width: 90px;  min-width: 90px; }
+#log-table .c-lvl  { width: 10px;  min-width: 10px; } /* just the color bar */
+#log-table .c-msg  { /* fills rest */ }
+#log-table .c-src  { width: 150px; min-width: 120px; text-align: right; }
+
+#log-table tbody tr {
+  border-bottom: 1px solid #222;
+  cursor: pointer;
+}
+#log-table tbody tr:hover { background: #222; }
+
+#log-table tbody td {
+  padding: 5px 8px;
+  vertical-align: top;
+  font-size: 12px;
+}
+
+/* timestamp */
+td.c-ts {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 11px;
+  color: #555;
+  white-space: nowrap;
+}
+
+/* level color bar — thin left border approach, easier to scan than badges */
+td.c-lvl { padding: 0 0 0 3px; width: 4px; }
+.lvl-bar {
+  display: block;
+  width: 3px;
+  height: 100%;
+  min-height: 22px;
+  border-radius: 1px;
+}
+/* level colors — muted, not loud */
+.lvl-ERROR  { background: #c0392b; }
+.lvl-FATAL  { background: #8b0000; }
+.lvl-WARN   { background: #b8860b; }
+.lvl-INFO   { background: #3a70a8; }
+.lvl-DEBUG  { background: #4a7a4a; }
+
+/* message text */
+td.c-msg {
+  color: #c8c8c8;
+  word-break: break-all;
+  line-height: 1.5;
+  padding-left: 10px;
+}
+/* level-specific message tinting — subtle */
+tr.row-ERROR td.c-msg, tr.row-FATAL td.c-msg { color: #e8a0a0; }
+tr.row-WARN  td.c-msg { color: #d4bc7a; }
+tr.row-DEBUG td.c-msg { color: #8aab8a; }
+
+/* source label */
+td.c-src {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 11px;
+  color: #555;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* sensitive row: faint yellow bg + label in source column */
+tr.sensitive-row { background: rgba(180, 140, 20, 0.06); }
+tr.sensitive-row:hover { background: rgba(180, 140, 20, 0.10); }
+.sensitive-label {
+  display: block;
+  font-size: 10px;
+  color: #c8a84b;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+/* expanded metadata row */
+tr.meta-row td {
+  padding: 0;
+  background: #191919;
+}
+.meta-content {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 11px;
+  color: #9ab8d4;
+  padding: 8px 12px;
+  border-top: 1px solid #2a2a2a;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre;
+  line-height: 1.6;
+}
+
+/* empty state */
+.no-logs {
+  padding: 40px;
+  text-align: center;
+  color: #555;
+  font-size: 12px;
+}
 </style>
-</head><body>
+</head>
+<body>
 
-<div class="status-badge"><span class="tiny">Source: <span id="log-source">Loading...</span> | Redis: <span id="redis-status">Checking...</span></span></div>
-<div class="container-fluid p-3">
-<div class="d-flex align-items-center mb-3 flex-wrap">
-<h2 class="me-3 mb-0">🎯 Universal Logging Console</h2>
-<div class="tiny muted me-3">Live: <span id="live-indicator" class="live-off">OFF</span></div>
-<div class="header-controls ms-auto">
-<button id="live-toggle" class="btn btn-sm btn-outline-light">Start Live</button>
-<button class="export-btn" onclick="exportLogs('json')">📥 Export Visible Logs</button>
-<div class="form-check form-switch mb-0">
-<input class="form-check-input" type="checkbox" id="use-redis" checked>
-<label class="form-check-label tiny" for="use-redis" style="color:#e0f0ff!important;font-weight:600">Use Redis</label>
-</div>
-<div class="form-check form-switch mb-0">
-<input class="form-check-input" type="checkbox" id="hide-duplicates" checked>
-<label class="form-check-label tiny" for="hide-duplicates" style="color:#00ff00!important;font-weight:700">Hide Duplicates</label>
-</div>
-<div class="form-check form-switch mb-0">
-<input class="form-check-input" type="checkbox" id="user-activity-only">
-<label class="form-check-label tiny" for="user-activity-only" style="color:#ffa500!important;font-weight:700">User Activity</label>
-</div>
-<div class="form-check form-switch mb-0">
-<input class="form-check-input" type="checkbox" id="sensitive-only">
-<label class="form-check-label tiny" for="sensitive-only" style="color:#e0f0ff!important;font-weight:600">Sensitive Only</label>
-</div></div></div>
+<!-- ── Top bar ── -->
+<div id="topbar">
+  <h1>Log Console</h1>
+  <span class="sep">|</span>
+  <span class="status-text">src: <span id="log-source">—</span></span>
+  <span class="sep">|</span>
+  <span class="status-text">redis: <span id="redis-status">—</span></span>
+  <span class="sep">|</span>
+  <!-- live toggle button -->
+  <button class="btn" id="live-toggle">▶ Live</button>
+  <span id="live-indicator" style="font-size:11px;color:#555">off</span>
+  <!-- export -->
+  <button class="btn" onclick="exportLogs('json')">↓ Export JSON</button>
 
-<div class="card p-3 mb-3">
-<h6 class="tiny mb-3">⏱️ Time Range Filter</h6>
-<div class="time-range-btns">
-<button class="time-btn active" data-range="all">All Time</button>
-<button class="time-btn" data-range="15min">Last 15 min</button>
-<button class="time-btn" data-range="1hour">Last 1 hour</button>
-<button class="time-btn" data-range="4hour">Last 4 hours</button>
-<button class="time-btn" data-range="24hours">Last 24 hours</button>
-</div>
+  <!-- toggles pushed to the right -->
+  <span style="margin-left:auto"></span>
+
+  <label class="sw-wrap">
+    <input type="checkbox" id="use-redis" checked>
+    <label for="use-redis">Redis</label>
+  </label>
+  <label class="sw-wrap">
+    <input type="checkbox" id="hide-duplicates" checked>
+    <label for="hide-duplicates" class="hl">Dedup</label>
+  </label>
+  <label class="sw-wrap">
+    <input type="checkbox" id="user-activity-only">
+    <label for="user-activity-only" class="hl">User Activity</label>
+  </label>
+  <label class="sw-wrap">
+    <input type="checkbox" id="sensitive-only">
+    <label for="sensitive-only">Sensitive</label>
+  </label>
 </div>
 
-<div class="row g-3">
-<div class="col-12 col-md-3">
-<div class="card p-3 mb-3">
-<h6 class="tiny">🔍 Filters</h6>
-<div class="mb-2"><label class="form-label tiny">Level</label>
-<select id="level-filter" class="form-select form-select-sm"><option value="">All</option><option>ERROR</option><option>FATAL</option><option>WARN</option><option>INFO</option><option>DEBUG</option></select></div>
-<div class="mb-2"><label class="form-label tiny">Source</label>
-<input id="source-filter" class="form-control form-control-sm" placeholder="app name, redis, etc."></div>
-<div class="mb-2"><label class="form-label tiny">Search</label>
-<input id="text-search" class="form-control form-control-sm" placeholder="login, api, error"></div>
-<button id="apply-filters" class="btn btn-sm btn-primary mt-2">Apply Filters</button>
-</div>
-<div class="card p-3 mb-3">
-<h6 class="tiny">📊 Metrics <span id="sensitive-count"></span></h6>
-<div class="d-flex gap-2 flex-column">
-<div><strong>Sensitive:</strong> <span id="metric-sensitive">0</span></div>
-<div><strong>Total:</strong> <span id="metric-total">0</span></div>
-<div><strong>Filtered:</strong> <span id="metric-filtered">0</span></div>
-<div><strong>Errors:</strong> <span id="metric-errs" style="color:#ff6b6b!important">0</span></div>
-<div><strong>Warns:</strong> <span id="metric-warns" style="color:#ff8c00!important">0</span></div>
-<div><strong>Events/min:</strong> <span id="metric-epm">0</span></div>
-</div></div>
-</div>
-<div class="col-12 col-md-9">
-<div class="card p-3 mb-3">
-<div class="d-flex align-items-center mb-2">
-<h6 class="mb-0">📝 Real-Time Log Tail</h6>
-</div>
-<div id="applied-filters" class="applied-filters">No filters applied • Auto-discovering endpoints...</div>
-<div class="mb-3" style="max-width:500px"><canvas id="level-chart" height="90"></canvas></div>
-<div id="logs-container" style="max-height:60vh;overflow:auto"></div>
-</div></div></div></div>
-<template id="row-tpl">
-<div class="p-2 table-row" role="button" style="border-bottom:1px solid rgba(255,255,255,.05)">
-<div class="d-flex">
-<div style="width:140px" class="mono tiny" data-ts></div>
-<div style="width:90px" class="tiny" data-level></div>
-<div class="flex-fill" data-message style="padding-right:10px;color:#e6f4ff;font-weight:500"></div>
-<div style="width:180px" class="tiny text-end" data-source></div>
-</div>
-<div class="mt-1 small meta" data-meta style="display:none"></div>
-</div>
-</template>
+<!-- ── Body: sidebar + log area ── -->
+<div id="body-wrap">
+
+  <!-- ── Sidebar ── -->
+  <div id="sidebar">
+
+    <div class="s-head">Filters</div>
+
+    <div class="field">
+      <label>Level</label>
+      <select id="level-filter">
+        <option value="">All</option>
+        <option>ERROR</option><option>FATAL</option>
+        <option>WARN</option><option>INFO</option><option>DEBUG</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Source</label>
+      <input id="source-filter" placeholder="container, service…">
+    </div>
+    <div class="field">
+      <label>Search</label>
+      <input id="text-search" placeholder="keyword, path…">
+    </div>
+    <button class="btn primary" id="apply-filters" style="width:100%;text-align:center;margin-top:2px">Apply</button>
+
+    <div class="s-head" style="margin-top:14px">Metrics</div>
+    <!-- plain two-column table, easy to read -->
+    <table class="metrics-tbl">
+      <tr><td>Total</td><td id="metric-total">—</td></tr>
+      <tr><td>Filtered</td><td id="metric-filtered">—</td></tr>
+      <tr><td>Errors</td><td id="metric-errs" class="v-err">—</td></tr>
+      <tr><td>Warnings</td><td id="metric-warns" class="v-warn">—</td></tr>
+      <tr><td>Sensitive</td><td id="metric-sensitive" class="v-sensitive">—</td></tr>
+      <tr><td>Events/min</td><td id="metric-epm">—</td></tr>
+    </table>
+
+  </div><!-- /sidebar -->
+
+  <!-- ── Log panel ── -->
+  <div id="log-panel">
+
+    <!-- time range strip -->
+    <div id="time-strip">
+      <button class="time-btn active" data-range="all">All</button>
+      <button class="time-btn" data-range="15min">15 min</button>
+      <button class="time-btn" data-range="1hour">1 h</button>
+      <button class="time-btn" data-range="4hour">4 h</button>
+      <button class="time-btn" data-range="24hours">24 h</button>
+    </div>
+
+    <!-- active filter summary — monospace, one line -->
+    <div id="applied-filters">no filters active</div>
+
+    <!-- mini chart -->
+    <div id="chart-wrap">
+      <canvas id="level-chart"></canvas>
+    </div>
+
+    <!-- log rows -->
+    <div id="log-scroller">
+      <table id="log-table">
+        <thead>
+          <tr>
+            <th class="c-ts">Time</th>
+            <th class="c-lvl"></th><!-- level color bar, no label needed -->
+            <th class="c-msg">Message</th>
+            <th class="c-src">Source</th>
+          </tr>
+        </thead>
+        <tbody id="log-tbody">
+          <tr><td colspan="4" class="no-logs">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /log-panel -->
+
+</div><!-- /body-wrap -->
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-let live=false,pollInterval=null,currentTimeRange='all';const POLL_MS=2000,MAX_ROWS=200;let levelChart=null;
+// ── All logic identical to original ─────────────────────────────────────────
+let live = false, pollInterval = null, currentTimeRange = 'all';
+const POLL_MS = 2000, MAX_ROWS = 200;
+let levelChart = null;
 
-function initChart(){const t=document.getElementById("level-chart").getContext("2d");levelChart=new Chart(t,{type:"bar",data:{labels:["ERROR","WARN","INFO"],datasets:[{label:"Count",data:[0,0,0],backgroundColor:["#e02424","#ff8c00","#2d9cdb"]}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:"#b8c9dc"}},x:{ticks:{color:"#b8c9dc"}}}}})}
+function initChart() {
+  const ctx = document.getElementById('level-chart').getContext('2d');
+  levelChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['ERROR', 'WARN', 'INFO'],
+      datasets: [{
+        data: [0, 0, 0],
+        // muted colours matching the level bar palette
+        backgroundColor: ['rgba(192, 57, 43, 0.65)', 'rgba(184, 134, 11, 0.65)', 'rgba(58, 112, 168, 0.65)'],
+        borderRadius: 2,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: '#252525' },
+          ticks: { color: '#555', font: { family: 'Consolas, monospace', size: 10 } }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: '#666', font: { family: 'Consolas, monospace', size: 10 } }
+        }
+      }
+    }
+  });
+}
 
-function updateChartFromMetrics(t){levelChart||initChart();const e=t.errs||0,r=t.warns||0,a=Math.max(0,(t.total||0)-e-r);levelChart.data.datasets[0].data=[e,r,a];levelChart.update()}
+function updateChartFromMetrics(m) {
+  if (!levelChart) initChart();
+  const e = m.errs || 0, w = m.warns || 0, i = Math.max(0, (m.total || 0) - e - w);
+  levelChart.data.datasets[0].data = [e, w, i];
+  levelChart.update();
+}
 
-function getFilterParams(){return{level:document.getElementById("level-filter").value.trim(),source:document.getElementById("source-filter").value.trim(),search:document.getElementById("text-search").value.trim(),sensitive_only:document.getElementById("sensitive-only").checked,use_redis:document.getElementById("use-redis").checked?"1":"0",hide_duplicates:document.getElementById("hide-duplicates").checked?"1":"0",user_activity_only:document.getElementById("user-activity-only").checked?"1":"0",time_range:currentTimeRange}}
+function getFilterParams() {
+  return {
+    level:              document.getElementById('level-filter').value.trim(),
+    source:             document.getElementById('source-filter').value.trim(),
+    search:             document.getElementById('text-search').value.trim(),
+    sensitive_only:     document.getElementById('sensitive-only').checked,
+    use_redis:          document.getElementById('use-redis').checked ? '1' : '0',
+    hide_duplicates:    document.getElementById('hide-duplicates').checked ? '1' : '0',
+    user_activity_only: document.getElementById('user-activity-only').checked ? '1' : '0',
+    time_range:         currentTimeRange
+  };
+}
 
-function updateAppliedFiltersDisplay(discoveredCount){const t=getFilterParams(),e=t.level||"any",r=t.source||"any",a=t.search||"*",s=t.sensitive_only?" • Sensitive only":"",i="1"===t.use_redis?" • Redis":" • Docker",o="1"===t.hide_duplicates?' • <span class="dedup-highlight">Deduplicated</span>':"",n="1"===t.user_activity_only?' • <span style="color:#ffa500">🎯 User Activity (static assets hidden)</span>':"",l=currentTimeRange!=="all"?" • ⏱️ "+currentTimeRange:"",d=discoveredCount?" • 🔍 "+discoveredCount+" endpoints":"";document.getElementById("applied-filters").innerHTML=`Filters: Level=${e} • Source=${r} • Text="${a}"${s}${i}${o}${n}${l}${d}`}
+// build the filter summary line in a compact, readable format
+function updateAppliedFiltersDisplay(discoveredCount) {
+  const p = getFilterParams();
+  let parts = [];
+  if (p.level)  parts.push(`<span class="f-active">level=${p.level}</span>`);
+  if (p.source) parts.push(`<span class="f-active">src=${p.source}</span>`);
+  if (p.search) parts.push(`<span class="f-active">search="${p.search}"</span>`);
+  if (p.sensitive_only)          parts.push('<span class="f-amber">sensitive</span>');
+  if (p.hide_duplicates === '1') parts.push('<span class="f-dedup">dedup</span>');
+  if (p.user_activity_only === '1') parts.push('<span class="f-amber">user-activity</span>');
+  if (p.use_redis === '1')       parts.push('redis');  else parts.push('docker');
+  if (currentTimeRange !== 'all') parts.push(`<span class="f-active">t=${currentTimeRange}</span>`);
+  if (discoveredCount) parts.push(`${discoveredCount} endpoints`);
+  const bar = document.getElementById('applied-filters');
+  bar.innerHTML = parts.length ? parts.join(' · ') : 'no filters active';
+}
 
-function humanTime(t){if(!t)return"---";try{const e=new Date(t);if(isNaN(e))return t;const r=Math.floor((Date.now()-e.getTime())/1e3);return r<60?r+"s ago":r<3600?Math.floor(r/60)+"m ago":e.toLocaleString()}catch(e){return t}}
+function humanTime(ts) {
+  if (!ts) return '—';
+  try {
+    const d = new Date(ts);
+    if (isNaN(d)) return ts;
+    const s = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (s < 60)   return s + 's ago';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    return d.toLocaleTimeString();
+  } catch { return ts; }
+}
 
-function badgeFor(t){return"ERROR"===t?'<span class="badge badge-ERROR">ERROR</span>':"FATAL"===t?'<span class="badge badge-FATAL">FATAL</span>':"WARN"===t?'<span class="badge badge-WARN">WARN</span>':"INFO"===t?'<span class="badge badge-INFO">INFO</span>':'<span class="badge badge-DEBUG">DEBUG</span>'}
+// simple color bar — no badge background, just a thin strip
+function lvlBarClass(lvl) {
+  return { ERROR: 'lvl-ERROR', FATAL: 'lvl-FATAL', WARN: 'lvl-WARN', INFO: 'lvl-INFO', DEBUG: 'lvl-DEBUG' }[lvl] || 'lvl-INFO';
+}
 
-function escapeHtml(t){return String(t).replace(/[&<>"']/g,(t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[t]))}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+}
 
-function renderLogs(t){const e=document.getElementById("logs-container"),r=t.logs||[],a=t.metrics||{},discovered=t.discovered_endpoints||[];document.getElementById("log-source").innerText=t.source||"unknown";document.getElementById("redis-status").innerHTML=t.redis_available?'<span style="color:#00ff00">✓ Available</span>':'<span style="color:#ff8c00">✗ Unavailable</span>';document.getElementById("metric-total").innerText=a.total||0;document.getElementById("metric-filtered").innerText=t.filtered_count||0;document.getElementById("metric-errs").innerText=a.errs||0;document.getElementById("metric-warns").innerText=a.warns||0;document.getElementById("metric-epm").innerText=(a.events_per_min||0).toFixed(1);document.getElementById("metric-sensitive").innerText=a.sensitive||0;document.getElementById("sensitive-count").innerText=a.sensitive?"Sensitive: "+a.sensitive:"";updateAppliedFiltersDisplay(discovered.length);updateChartFromMetrics(a);if(0===r.length){e.innerHTML='<div class="no-logs">No logs found. Try changing time range or filters.</div>';return}e.innerHTML="";r.slice(0,MAX_ROWS).forEach((t=>{const r=document.getElementById("row-tpl").content.cloneNode(!0);r.querySelector("[data-ts]").innerText=humanTime(t.timestamp);r.querySelector("[data-level]").innerHTML=badgeFor(t.level||"INFO");const a=r.querySelector("[data-message]");a.innerText=t.message||"---";a.style.whiteSpace="normal";a.style.wordWrap="break-word";r.querySelector("[data-source]").innerText=t.source||"---";const s=r.querySelector("[data-meta]");s.innerHTML='<pre style="margin:0">'+escapeHtml(JSON.stringify(t.metadata||{},null,2))+"</pre>";const i=r.querySelector(".table-row");t.sensitive&&(i.classList.add("sensitive-row"),r.querySelector("[data-source]").innerHTML+='<span class="sensitive-tag">SENSITIVE</span>');i.addEventListener("click",(()=>{s.style.display="none"===s.style.display?"block":"none"}));e.appendChild(r)}))}
+function renderLogs(data) {
+  const logs = data.logs || [], m = data.metrics || {}, discovered = data.discovered_endpoints || [];
 
-async function pollOnce(){try{const t=getFilterParams(),e=new URLSearchParams({limit:500,level:t.level,source:t.source,search:t.search,sensitive:t.sensitive_only?"1":"",use_redis:t.use_redis,hide_duplicates:t.hide_duplicates,user_activity_only:t.user_activity_only,time_range:t.time_range}),r=await fetch(`/api/logs?${e}`),a=await r.json();renderLogs(a)}catch(t){console.error("poll error",t)}}
+  // update topbar status
+  document.getElementById('log-source').textContent = data.source || '—';
+  document.getElementById('redis-status').textContent = data.redis_available ? 'ok' : 'unavail';
+  document.getElementById('redis-status').style.color = data.redis_available ? '#7dc87d' : '#d66';
 
-function exportLogs(format){const params=getFilterParams();const queryParams=new URLSearchParams({level:params.level,source:params.source,search:params.search,sensitive:params.sensitive_only?"1":"",use_redis:params.use_redis,hide_duplicates:params.hide_duplicates,user_activity_only:params.user_activity_only,time_range:params.time_range});const url=`/api/export/${format}?${queryParams.toString()}`;window.location.href=url}
+  // metrics
+  document.getElementById('metric-total').textContent     = m.total ?? '—';
+  document.getElementById('metric-filtered').textContent  = data.filtered_count ?? '—';
+  document.getElementById('metric-errs').textContent      = m.errs ?? '—';
+  document.getElementById('metric-warns').textContent     = m.warns ?? '—';
+  document.getElementById('metric-sensitive').textContent = m.sensitive ?? '—';
+  document.getElementById('metric-epm').textContent       = (m.events_per_min || 0).toFixed(1);
 
-document.getElementById("live-toggle").addEventListener("click",(function(){live=!live;const t=document.getElementById("live-indicator");t.innerText=live?"ON":"OFF";t.className=live?"live-on":"live-off";this.innerText=live?"Stop Live":"Start Live";live?(pollOnce(),pollInterval=setInterval(pollOnce,POLL_MS)):(clearInterval(pollInterval),pollInterval=null)}));
+  updateAppliedFiltersDisplay(discovered.length);
+  updateChartFromMetrics(m);
 
-document.getElementById("apply-filters").addEventListener("click",(()=>{pollOnce()}));
+  const tbody = document.getElementById('log-tbody');
 
-document.querySelectorAll(".time-btn").forEach(btn=>{btn.addEventListener("click",function(){document.querySelectorAll(".time-btn").forEach(b=>b.classList.remove("active"));this.classList.add("active");currentTimeRange=this.dataset.range;pollOnce()})});
+  if (!logs.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="no-logs">No logs match current filters.</td></tr>';
+    return;
+  }
 
-["level-filter","source-filter","text-search","sensitive-only","use-redis","hide-duplicates","user-activity-only"].forEach((t=>{const e=document.getElementById(t);e.addEventListener("keydown",(t=>{"Enter"===t.key&&(t.preventDefault(),pollOnce())}));e.addEventListener("change",(()=>{"sensitive-only"!==t&&"use-redis"!==t&&"hide-duplicates"!==t&&"user-activity-only"!==t||pollOnce()}))}));
+  const frag = document.createDocumentFragment();
+  logs.slice(0, MAX_ROWS).forEach(log => {
+    const lvl = log.level || 'INFO';
+    const tr = document.createElement('tr');
+    tr.classList.add('row-' + lvl);
+    if (log.sensitive) tr.classList.add('sensitive-row');
 
+    // source cell content (with sensitive label below if needed)
+    const srcContent = log.sensitive
+      ? `${esc(log.source || '—')}<span class="sensitive-label">⚠ sensitive</span>`
+      : esc(log.source || '—');
+
+    tr.innerHTML =
+      `<td class="c-ts mono">${esc(humanTime(log.timestamp))}</td>` +
+      `<td class="c-lvl"><span class="lvl-bar ${lvlBarClass(lvl)}"></span></td>` +
+      `<td class="c-msg">${esc(log.message || '—')}</td>` +
+      `<td class="c-src">${srcContent}</td>`;
+
+    // click to expand metadata
+    tr.addEventListener('click', () => {
+      const next = tr.nextElementSibling;
+      if (next && next.classList.contains('meta-row')) {
+        next.remove(); return;
+      }
+      const meta = document.createElement('tr');
+      meta.classList.add('meta-row');
+      meta.innerHTML = `<td colspan="4"><div class="meta-content">${esc(JSON.stringify(log.metadata || {}, null, 2))}</div></td>`;
+      tr.after(meta);
+    });
+
+    frag.appendChild(tr);
+  });
+
+  tbody.innerHTML = '';
+  tbody.appendChild(frag);
+}
+
+async function pollOnce() {
+  try {
+    const p = getFilterParams();
+    const q = new URLSearchParams({
+      limit: 500, level: p.level, source: p.source, search: p.search,
+      sensitive: p.sensitive_only ? '1' : '',
+      use_redis: p.use_redis, hide_duplicates: p.hide_duplicates,
+      user_activity_only: p.user_activity_only, time_range: p.time_range
+    });
+    const r = await fetch(`/api/logs?${q}`);
+    renderLogs(await r.json());
+  } catch (e) { console.error('poll error', e); }
+}
+
+function exportLogs(format) {
+  const p = getFilterParams();
+  const q = new URLSearchParams({
+    level: p.level, source: p.source, search: p.search,
+    sensitive: p.sensitive_only ? '1' : '',
+    use_redis: p.use_redis, hide_duplicates: p.hide_duplicates,
+    user_activity_only: p.user_activity_only, time_range: p.time_range
+  });
+  window.location.href = `/api/export/${format}?${q}`;
+}
+
+// ── event listeners — unchanged logic ───────────────────────────────────────
+document.getElementById('live-toggle').addEventListener('click', function () {
+  live = !live;
+  const ind = document.getElementById('live-indicator');
+  ind.textContent = live ? 'live' : 'off';
+  ind.style.color = live ? '#7dc87d' : '#555';
+  this.textContent = live ? '⏹ Stop' : '▶ Live';
+  this.classList.toggle('live-active', live);
+  if (live) { pollOnce(); pollInterval = setInterval(pollOnce, POLL_MS); }
+  else       { clearInterval(pollInterval); pollInterval = null; }
+});
+
+document.getElementById('apply-filters').addEventListener('click', pollOnce);
+
+document.querySelectorAll('.time-btn').forEach(btn => {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    currentTimeRange = this.dataset.range;
+    pollOnce();
+  });
+});
+
+['level-filter', 'source-filter', 'text-search', 'sensitive-only', 'use-redis', 'hide-duplicates', 'user-activity-only'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pollOnce(); } });
+  el.addEventListener('change', () => {
+    if (['sensitive-only', 'use-redis', 'hide-duplicates', 'user-activity-only'].includes(id)) pollOnce();
+  });
+});
+
+// initial load
+initChart();
 pollOnce();
 </script>
 </body></html>"""
 
+
 @app.route("/")
 def page():
     return render_template_string(TEMPLATE)
+
 
 if __name__ == "__main__":
     print("\n" + "="*70)

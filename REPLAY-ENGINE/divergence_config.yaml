@@ -22,49 +22,8 @@ global_noise:
   status_transitions:
     - from: 304
       to: 200
-      reason: "Browser cache hit during recording. Replay fetches fresh -- 200 is correct."
-      recommendation: "No action needed."
 
 custom_rules:
-
-  # ── LOGIN & JWT ─────────────────────────────────────────────────────────────
-
-  - id: "juiceshop-login-jwt-refresh"
-    label: "JWT Login -- Fresh Token Issued"
-    tier: EXPECTED
-    match:
-      path_patterns:
-        - "/rest/user/login"
-      methods:
-        - POST
-    reason: "Login POST issues a fresh JWT during replay. The engine captures the new token automatically and injects it on all subsequent requests. The recorded token and new token will always differ -- this is the intended Dynamic Token Injection behaviour."
-    recommendation: "No action needed. The engine handles this automatically."
-
-  - id: "juiceshop-login-pre-auth"
-    label: "Login redirect before session established"
-    tier: EXPECTED
-    match:
-      path_patterns:
-        - "/rest/user/login"
-      methods:
-        - GET
-    reason: "GET to login endpoint -- warmup request or pre-login probe. No auth expected here."
-    recommendation: "No action needed."
-
-  - id: "juiceshop-401-pre-login"
-    label: "Request fired before login replay (stale token)"
-    tier: EXPECTED
-    match:
-      path_patterns:
-        - "/rest/*"
-        - "/api/*"
-      replay_statuses:
-        - 401
-    reason: "Request fired before the login POST was replayed, or recorded token was stale at time of recording. After login replay, the engine injects the fresh JWT automatically."
-    recommendation: "Ensure POST /rest/user/login appears early in your recording. Start recording after you are already logged in for cleanest results."
-
-  # ── BASKET & CART ───────────────────────────────────────────────────────────
-
   - id: "juiceshop-basket-drift"
     label: "Dynamic Basket ID Generation"
     tier: EXPECTED
@@ -73,10 +32,6 @@ custom_rules:
         - "/api/Baskets/*"
         - "/api/BasketItems/*"
         - "/rest/basket/*"
-    reason: "Basket and BasketItem IDs are auto-incremented and differ on every session. The DB state is reset by checkpoint restore, so IDs are regenerated."
-    recommendation: "Expected. No action needed."
-
-  # ── E-COMMERCE / ORDERS ─────────────────────────────────────────────────────
 
   - id: "juiceshop-ecommerce-drift"
     label: "Dynamic E-Commerce IDs"
@@ -90,28 +45,9 @@ custom_rules:
         - "/api/Quantitys*"
         - "/api/Products*"
         - "/rest/products/search*"
-    reason: "Addresses, Cards, and Orders are dynamically generated with new IDs on each replay. The DB checkpoint restores a clean state so these records are recreated from scratch."
-    recommendation: "Expected. No action needed."
+    reason: "Addresses, Cards, and Orders are dynamically generated."
 
-  - id: "juiceshop-order-placed-already"
-    label: "Order already placed in recording"
-    tier: EXPECTED
-    match:
-      path_patterns:
-        - "/api/Orders*"
-        - "/rest/order*"
-      methods:
-        - POST
-      replay_statuses:
-        - 400
-        - 409
-        - 500
-    reason: "Order was already placed during the original recording session. On replay the order record exists so a second creation fails with constraint violation."
-    recommendation: "Expected with DB checkpoint active. The checkpoint captures the post-order state."
-
-  # ── SESSION & USER ──────────────────────────────────────────────────────────
-
-  - id: "juiceshop-whoami"
+  - id: "juiceshop-whoami"   
     label: "Session Token Validation"
     tier: EXPECTED
     match:
@@ -122,22 +58,9 @@ custom_rules:
         - "/rest/languages*"
         - "/api/SecurityAnswers*"
         - "/api/SecurityQuestions*"
-    reason: "These endpoints return data tied to the specific session token. The response body will differ between recording and replay because the JWT and session are fresh."
-    recommendation: "Expected. Status code match is what matters here."
-
-  - id: "juiceshop-captcha"
-    label: "CAPTCHA challenge (dynamic)"
-    tier: EXPECTED
-    match:
-      path_patterns:
-        - "/rest/captcha*"
-    reason: "CAPTCHA challenges are randomly generated per session and cannot be replayed deterministically."
-    recommendation: "Expected. No action needed."
-
-  # ── STATIC ASSETS & BACKGROUND ──────────────────────────────────────────────
 
   - id: "juiceshop-metrics"
-    label: "Background Telemetry and Static Assets"
+    label: "Background Telemetry & Assets"
     tier: EXPECTED
     match:
       path_patterns:
@@ -146,41 +69,3 @@ custom_rules:
         - "/*.js"
         - "/*.css"
         - "/vendor/*"
-        - "/*.map"
-        - "/*.ico"
-        - "/*.woff"
-        - "/*.woff2"
-        - "/*.ttf"
-    reason: "Static assets and telemetry endpoints are served from disk/cache and do not depend on session state. Minor version differences are expected."
-    recommendation: "Expected. No action needed."
-
-  - id: "juiceshop-socket-io"
-    label: "WebSocket / Socket.IO session expired"
-    tier: EXPECTED
-    match:
-      path_patterns:
-        - "/socket.io*"
-    reason: "Socket.IO session IDs (sid=) are one-time-use and expire when the original session ends. Replaying a stale sid returns 400 -- correct protocol behaviour."
-    recommendation: "WebSocket sessions cannot be replayed from HTTP logs. This is by design."
-
-  # ── RATE LIMITING & INFRA ───────────────────────────────────────────────────
-
-  - id: "juiceshop-rate-limit"
-    label: "Rate limiting triggered by fast replay"
-    tier: INVESTIGATE
-    match:
-      replay_statuses:
-        - 429
-    reason: "Replay fires requests faster than a human browser. Juice Shop rate-limits login and certain API endpoints."
-    recommendation: "Reduce replay speed. Check Juice Shop rate-limit config. For testing purposes you can disable rate limiting in the app config."
-
-  - id: "juiceshop-transient-infra"
-    label: "Transient infrastructure error"
-    tier: INVESTIGATE
-    match:
-      replay_statuses:
-        - 502
-        - 503
-        - 504
-    reason: "Gateway/container transient error during replay. Usually a brief startup or overload condition."
-    recommendation: "Re-run the replay. If it recurs consistently, check container health with: docker compose logs juiceshop"
