@@ -65,11 +65,13 @@
     #  PHASE 2: Code Sync — Git Pull
     # -------------------------------------------------------------------------
 
-    - name: "[2/6] Pull latest code from '{{ git_branch }}' branch"
-      ansible.builtin.shell: "git pull origin {{ git_branch }}"
+    - name: "[2/6] Force pull latest code (Reset strictly to GitHub)"
+      ansible.builtin.shell: |
+        git fetch --all
+        git reset --hard origin/{{ git_branch }}
       args:
         chdir: "{{ project_root }}"
-      become: false   # Run as azureuser, not root (avoids git permission issues)
+      become: false
       register: git_pull_output
       changed_when: "'Already up to date.' not in git_pull_output.stdout"
 
@@ -81,8 +83,8 @@
     #  PHASE 3: Deploy Hook Environment (Nginx, Juice Shop, Redis, Fluentd)
     # -------------------------------------------------------------------------
 
-    - name: "[3/6] Build & start Hook Microservice (docker compose up --build -d)"
-      ansible.builtin.shell: "docker compose up --build -d"
+    - name: "[3/6] Build & start Hook Microservice (Force NO-CACHE Build)"
+      ansible.builtin.shell: "docker compose build --no-cache && docker compose up -d"
       args:
         chdir: "{{ hook_dir }}"
       register: hook_output
