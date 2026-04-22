@@ -1,3 +1,4 @@
+# FORCE NEW UI UPDATE
 # dashboard.py - PROFESSIONAL LOGGING DASHBOARD with Auto-Discovery
 
 from flask import Flask, jsonify, render_template_string, request, Response
