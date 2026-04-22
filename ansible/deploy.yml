@@ -18,6 +18,8 @@
 #        to avoid Python SDK dependency errors on the remote VM.
 # =============================================================================
 
+
+
 - name: Deploy DLTRF to Azure VM
   hosts: dltrf_servers
   become: true   # Run tasks as sudo/root where needed
@@ -144,5 +146,4 @@
           - " Replay Engine API  :  http://20.212.82.99:8000"
           - " HTML Report        :  http://20.212.82.99:8000/report"
           - "============================================"
-
-  Add-Content -Path ".\ansible\deploy.yml" -Value "# Force Docker Rebuild Trigger"
+# Force Docker Rebuild Trigger
