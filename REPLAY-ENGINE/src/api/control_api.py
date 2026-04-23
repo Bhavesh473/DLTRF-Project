@@ -69,7 +69,7 @@ _legacy_cfg = _load_legacy_config()
 # ── Redis config ──────────────────────────────────────────────────────────────
 _redis_cfg = _legacy_cfg.get("redis", {})
 REDIS_URL        = os.getenv("REDIS_URL",  _redis_cfg.get("url",        "redis://localhost:6379"))
-STREAM_KEY       = os.getenv("STREAM_KEY", _redis_cfg.get("stream_key", "logs:stream"))
+STREAM_KEY = os.getenv("STREAM_KEY", "nginx-log-stream")
 CONSUMER_GROUP   = _redis_cfg.get("consumer_group", "replay_group")
 CONSUMER_NAME    = _redis_cfg.get("consumer_name",  "replayer-1")
 CHECKPOINT_EVERY = int(_redis_cfg.get("checkpoint_every", 10))

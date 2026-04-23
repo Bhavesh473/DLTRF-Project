@@ -270,8 +270,12 @@ def build_ctx(report: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -
     # nc_unclassified = CRITICAL items with NO matching rule (genuine unknowns)
     # Classified CRITICAL items (rule_id != "no_match") are explained — not genuine bugs
     nc_unclassified = sum(1 for e in critical_final if e.get("rule_id", "") in ("no_match", ""))
-
-    if rate >= 95.0 and nc_unclassified == 0:
+    
+    if total == 0:
+        verdict, vcol, vtext = "INVALID", "#6b7280", "No traffic found to replay."
+        rate_col = "#6b7280"
+        rate = 0.0
+    elif rate >= 95.0 and nc_unclassified == 0:
         verdict, vcol, vtext = "PASS",   "#16a34a", "High Reproducibility. Approved."
         rate_col = "#16a34a"
     elif rate >= 95.0 and nc_unclassified > 0:
@@ -285,7 +289,9 @@ def build_ctx(report: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -
         rate_col = "#dc2626"
 
     # ── Final statement ───────────────────────────────────────────────────────
-    if nc_unclassified == 0 and ni == 0:
+    if total == 0:
+        final_stmt = "<strong>0 requests found.</strong> The selected timeframe contains no logs to replay. Please record new traffic."
+    elif nc_unclassified == 0 and ni == 0:
         final_stmt = (
             f"<strong>{n_exact} request{'s' if n_exact != 1 else ''} reproduced exactly.</strong> "
             + (f"{ne} divergence{'s' if ne != 1 else ''} classified as expected noise — excluded from repro rate. " if ne > 0 else "")
