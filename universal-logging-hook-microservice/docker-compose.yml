@@ -64,7 +64,6 @@ services:
       - nginx-shared-logs:/var/log/nginx
       - nginx-payloads:/var/log/nginx/payloads
     environment:
-      # Hardcoded directly to Juice Shop's internal port (3000)
       - TARGET_APP_HOST=juice-shop
       - TARGET_APP_PORT=3000
     entrypoint:
@@ -92,6 +91,22 @@ services:
     environment:
       - REDIS_URL=redis://universal-logging-redis:6379
       - STREAM_KEY=nginx-log-stream
+    networks:
+      - logging-network
+    restart: unless-stopped
+
+  # ── Log Dashboard (NEW) ────────────────────────────────────────────────────
+  log-dashboard:
+    image: python:3.12-slim
+    container_name: log-dashboard
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: /bin/sh -c "pip install --no-cache-dir -r requirements.txt && python dashboard.py"
+    ports:
+      - "5000:5000"
+    depends_on:
+      - redis
     networks:
       - logging-network
     restart: unless-stopped
