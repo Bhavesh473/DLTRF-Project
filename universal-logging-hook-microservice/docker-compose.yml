@@ -103,13 +103,13 @@ services:
     volumes:
       - .:/app
     environment:               # <--- YEH 3 LINES ADD KARNI HAIN
-      - REDIS_HOST=redis       # <---
+      - REDIS_HOST=universal-logging-redis       # <---
       - REDIS_PORT=6379        # <---
     command: /bin/sh -c "pip install --no-cache-dir -r requirements.txt && python dashboard.py"
     ports:
       - "5000:5000"
     depends_on:
-      - redis
+      - universal-logging-redis
     networks:
       - logging-network
     restart: unless-stopped

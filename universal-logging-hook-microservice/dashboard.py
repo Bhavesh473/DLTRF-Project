@@ -14,7 +14,7 @@ r = redis.Redis(host=redis_host, port=6379, db=0)
 app = Flask(__name__)
 
 # --- Configuration ---
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 REDIS_STREAM_KEY = os.getenv("STREAM_KEY", "nginx-log-stream")
 
 VOLUME_THRESHOLD = 200
