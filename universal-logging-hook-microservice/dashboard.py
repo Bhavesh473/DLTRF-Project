@@ -7,6 +7,9 @@ from datetime import datetime, timedelta
 from collections import Counter
 from functools import lru_cache
 import redis
+import os
+redis_host = os.environ.get('REDIS_HOST', 'localhost')
+r = redis.Redis(host=redis_host, port=6379, db=0)
 
 app = Flask(__name__)
 
