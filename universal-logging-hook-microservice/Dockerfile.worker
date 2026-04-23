@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+RUN pip install --no-cache-dir redis
+
+# Copy worker script
+COPY worker.py /app/
+COPY startup_validator.py /app/
+
+# Make executable
+RUN chmod +x /app/worker.py
+
+CMD ["python3", "/app/worker.py"]
